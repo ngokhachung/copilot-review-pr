@@ -604,7 +604,7 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
 8.  `HTTP_GetRules` — GET `@{REPO_API}/items?path=@{encodeUriComponent(parameters('prv_RULES_PATH'))}&versionDescriptor.version=@{encodeUriComponent(outputs('Compose_TargetBranch'))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`
 9.  `Cond_RulesExist` — Condition (Configure run after HTTP_GetRules: succeeded **và** failed):
     `@{outputs('HTTP_GetRules')?['statusCode']}` equals `200`.
-    **No** → `Reply_NoRules` ("❌ Repo chưa có `.review/rules.md` trên target branch — tạo file theo template rồi gọi /review lại.") → Terminate (Succeeded).
+    **No** → `Reply_NoRules` (POST comment vào TriggerThreadId nếu >0: "❌ Repo chưa có `.review/rules.md` trên target branch — tạo file theo template rồi gọi /review lại.") → Terminate (Succeeded).
 10. `HTTP_GetIterations` — GET `@{REPO_API}/pullRequests/@{...}/iterations?api-version=7.1`
     → `Compose_IterationId` = `@{last(body('HTTP_GetIterations')?['value'])?['id']}`
 11. `HTTP_GetChanges` — GET `.../iterations/@{outputs('Compose_IterationId')}/changes?$compareTo=0&api-version=7.1`
@@ -652,8 +652,9 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     - `Filter_BotThreads` — From `@{body('HTTP_GetThreads')?['value']}`, điều kiện:
       `@and(not(equals(item()?['properties']?['prv.fingerprint'], null)), not(equals(item()?['isDeleted'], true)))`
     - `Select_BotFp_All` — Map: `@{item()?['properties']?['prv.fingerprint']?['$value']}` → mảng fingerprint mọi thread bot (mọi status)
-    - `Filter_BotActive` — thêm điều kiện `equals(item()?['status'],'active')`; `Select_ActiveFp` tương tự.
+    - `Filter_BotActive` — thêm điều kiện `equals(item()?['status'],'active')`.
     - `Select_NewFp` — From varFindings, Map `@{item()?['fingerprint']}`.
+    - `Filter_UserResolved` — From `@{body('Filter_BotThreads')}`: `@and(not(equals(item()?['status'],'active')), contains(body('Select_NewFp'), item()?['properties']?['prv.fingerprint']?['$value']))` (thread đã đóng nhưng vi phạm vẫn còn trong findings hiện tại → user tự resolve).
 25. `Filter_NewFindings` — From `@{variables('varFindings')}`: `@not(contains(body('Select_BotFp_All'), item()?['fingerprint']))`
     `Apply_to_each_New`: `HTTP_PostThread` — POST `.../threads?api-version=7.1`, body (đúng cấu trúc `New-PrInlineThread` trong scripts/ado-api.ps1):
     comments[0].content =
@@ -661,16 +662,16 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     threadContext.filePath = `@{item()?['file']}` (đảm bảo bắt đầu '/': `@{if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))}`),
     rightFileStart/End.line = `@{item()?['line']}`, properties prv.fingerprint/prv.rule như reference.
 26. `Filter_FixedThreads` — From `@{body('Filter_BotActive')}`: `@not(contains(body('Select_NewFp'), item()?['properties']?['prv.fingerprint']?['$value']))`
-    `Apply_to_each_Fixed`: `HTTP_ReplyFixed` — POST `.../threads/@{item()?['id']}/comments` `{"parentCommentId":1,"content":"✅ Đã fix — cảm ơn bạn!","commentType":1}` ; `HTTP_ResolveThread` — PATCH `.../threads/@{item()?['id']}?api-version=7.1` `{"status":"fixed"}`.
+    `Apply_to_each_Fixed`: `HTTP_ReplyFixed` — POST `.../threads/@{item()?['id']}/comments?api-version=7.1` `{"parentCommentId":1,"content":"✅ Đã fix — cảm ơn bạn!","commentType":1}` ; `HTTP_ResolveThread` — PATCH `.../threads/@{item()?['id']}?api-version=7.1` `{"status":"fixed"}`.
 27. Đếm cho summary (Compose):
     `cntNew = length(body('Filter_NewFindings'))`, `cntFixed = length(body('Filter_FixedThreads'))`,
     `cntRemaining = sub(length(body('Filter_BotActive')), cntFixed)`,
-    `cntUserResolved = sub(length(body('Filter_BotThreads')), length(body('Filter_BotActive')))`.
+    `cntUserResolved = length(body('Filter_UserResolved'))`.
     `Compose_Summary` (markdown):
     `## 🤖 PR Review Agent — kết quả`
     `| Mới | Đã fix | Còn lại | User tự resolve |` + số liệu; danh sách varSkipped nếu không rỗng ("### File bỏ qua"); dòng cuối: rules version = `@{outputs('Compose_TargetBranch')}`.
     `Filter_SummaryThread` — From threads: `@not(equals(item()?['properties']?['prv.summary'], null))`.
-    Condition: rỗng → `HTTP_PostSummary` (POST thread, properties prv.summary, không threadContext); ngược lại → `HTTP_PatchSummary` — PATCH `.../threads/@{first(body('Filter_SummaryThread'))?['id']}/comments/1` `{"content": <Compose_Summary>}`.
+    Condition: rỗng → `HTTP_PostSummary` (POST thread, properties prv.summary, không threadContext); ngược lại → `HTTP_PatchSummary` — PATCH `.../threads/@{first(body('Filter_SummaryThread'))?['id']}/comments/1?api-version=7.1` `{"content": <Compose_Summary>}`.
     Cuối: Condition `TriggerThreadId > 0` → `HTTP_ReplyTrigger` — POST reply:
     `@{concat('✅ Review xong — ', cntNew, ' finding mới, ', cntFixed, ' đã fix, ', cntRemaining, ' còn lại. Xem summary comment.')}`
 
