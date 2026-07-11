@@ -139,3 +139,24 @@ Verify end-to-end trên Golden PR:
    `Cond_Valid`, không có comment bot.
 3. Kiểm tra chống vòng lặp: các reply bot vừa post ở bước (1) có sinh run mới
    không — expected: run mới kết thúc im lặng tại điều kiện author = bot.
+
+## 5. Kiểm tra sau setup
+
+Sau khi hoàn tất mục 1–4, chạy lần lượt các bước sau để xác nhận toàn bộ hệ
+thống hoạt động đúng trước khi bắt đầu pilot:
+
+1. Chạy `scripts/test-ado-access.ps1` → expected: 2 dòng `PASS` (kết nối ADO
+   API + repo) và 1 dòng `PASS` cho `templates/rules.md` (file rule đọc được
+   từ repo).
+2. Test Prompt node trong test pane của AI Builder theo đúng input/kết quả
+   mong đợi đã mô tả ở mục "Kiểm tra phần này" (mục 2 bên trên).
+3. Vào flow designer của **PR Review Pipeline** → Test → Manually: nhập
+   `PullRequestId` = Golden PR id (xem `docs/test-checklist.md`),
+   `TriggerThreadId` = `0` → expected: run Succeeded, có inline comment đúng
+   file/dòng và 1 summary comment trên Golden PR.
+4. Comment `/review` lên Golden PR để test end-to-end qua service hook +
+   trigger flow → expected: bot phản hồi như mô tả ở mục "Verify end-to-end
+   trên Golden PR" (mục 4 bên trên).
+
+Nếu bước nào không đạt, xem `docs/runbook.md` (mục "Sự cố thường gặp") để
+chẩn đoán.
