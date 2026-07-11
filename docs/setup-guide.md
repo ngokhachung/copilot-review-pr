@@ -145,9 +145,10 @@ Verify end-to-end trên Golden PR:
 Sau khi hoàn tất mục 1–4, chạy lần lượt các bước sau để xác nhận toàn bộ hệ
 thống hoạt động đúng trước khi bắt đầu pilot:
 
-1. Chạy `scripts/test-ado-access.ps1` → expected: 2 dòng `PASS` (kết nối ADO
-   API + repo) và 1 dòng `PASS` cho `templates/rules.md` (file rule đọc được
-   từ repo).
+1. Chạy `scripts/test-ado-access.ps1` → expected: 2 dòng PASS
+   (`PASS: repo '...'`, `PASS: liet ke PR active ...`) và
+   `PASS: doc duoc .review/rules.md (...)` (file rule trên pilot repo đọc
+   được).
 2. Test Prompt node trong test pane của AI Builder theo đúng input/kết quả
    mong đợi đã mô tả ở mục "Kiểm tra phần này" (mục 2 bên trên).
 3. Vào flow designer của **PR Review Pipeline** → Test → Manually: nhập
