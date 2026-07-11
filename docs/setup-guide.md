@@ -13,8 +13,7 @@ hook, trigger flow, kiểm tra sau khi setup) sẽ được bổ sung ở mục 
   `ADO_PAT`.
 - Đã chạy `scripts/test-ado-access.ps1` thành công — dòng
   `PASS: repo '<name>' (id <GUID>, ...)` cho biết **repo GUID**, cần dùng lại
-  ở mục 1 bên dưới (biến `prv_ADO_REPO_ID`) và trong script lấy
-  `prv_BOT_ACCOUNT_ID`.
+  ở mục 1 bên dưới (biến `prv_ADO_REPO_ID`).
 - Có quyền tạo solution mới trên môi trường Power Platform (make.powerapps.com)
   dự định dùng cho pilot.
 
