@@ -21,6 +21,7 @@
   pullRequestThreadContext.iterationContext vào HTTP_PostThread (xem flow spec).
 - Muốn tắt khẩn cấp: disable service hook (ADO) hoặc turn off trigger flow.
 - Vi phạm tái xuất hiện sau khi bot đã tự resolve ở lần chạy trước: thread cũ không được mở lại (nguyên tắc never-reopen) và lần chạy mới đếm nó vào "User tự resolve" trong summary — hạn chế đã biết của pilot. Xử lý: dev mở lại thread thủ công nếu muốn track tiếp.
+- Hai vi phạm giống hệt nhau trong cùng file (cùng rule, cùng đoạn code, khác dòng): fingerprint trùng nhau nên chỉ dedupe được 1 thread; fix một chỗ sẽ không tự resolve thread (vi phạm còn lại vẫn giữ fingerprint sống). Hạn chế đã biết của pilot — xử lý thủ công.
 
 ## Nợ bảo mật pilot (bắt buộc xử lý trước khi nhân rộng)
 - `prv_ADO_PAT` và `prv_WEBHOOK_BASIC` đang là env var Text. Nâng lên Secret

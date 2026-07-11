@@ -14,7 +14,7 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     **No** → `Reply_NotActive` (POST comment vào TriggerThreadId nếu >0: "❌ PR không ở trạng thái active.") → Terminate (Succeeded).
 6.  `Compose_SourceBranch` — `@{replace(body('HTTP_GetPR')?['sourceRefName'],'refs/heads/','')}`
 7.  `Compose_TargetBranch` — `@{replace(body('HTTP_GetPR')?['targetRefName'],'refs/heads/','')}`
-8.  `HTTP_GetRules` — GET `@{REPO_API}/items?path=@{encodeUriComponent(parameters('prv_RULES_PATH'))}&versionDescriptor.version=@{encodeUriComponent(outputs('Compose_TargetBranch'))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`
+8.  `HTTP_GetRules` — GET `@{REPO_API}/items?path=@{encodeUriComponent(parameters('prv_RULES_PATH'))}&versionDescriptor.version=@{encodeUriComponent(outputs('Compose_TargetBranch'))}&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1`
 9.  `Cond_RulesExist` — Condition (Configure run after HTTP_GetRules: succeeded **và** failed):
     `@{outputs('HTTP_GetRules')?['statusCode']}` equals `200`.
     **No** → `Reply_NoRules` (POST comment vào TriggerThreadId nếu >0: "❌ Repo chưa có `.review/rules.md` trên target branch — tạo file theo template rồi gọi /review lại.") → Terminate (Succeeded).
@@ -56,9 +56,9 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     Schema: object `{findings: array of {file,line,type,ruleId,severity,message,suggestion,snippet}}` (mọi field string trừ line integer).
     **Retry 1 lần:** `Prompt_Review_2` + `Parse_Findings_2` với Configure run after `Parse_Findings` **has failed**;
     `Append_SkipParse` (run after Parse_Findings_2 failed): append vào varSkipped `@{concat(path, ' (JSON hỏng)')}`.
-23. `Apply_to_each_Finding` — From `@{coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))}`:
+23. `Apply_to_each_Finding` (Configure run after `Append_SkipParse`: is successful **và** is skipped) — From `@{coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))}`:
     Append to varFindings object:
-    `@{addProperty(item(), 'fingerprint', toLower(concat(item()?['file'], '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))}`
+    `@{addProperty(item(), 'fingerprint', toLower(concat(if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file'])), '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))}`
 
 ## Khối C — đối chiếu thread cũ & post
 24. `HTTP_GetThreads` — GET `.../pullRequests/@{...}/threads?api-version=7.1`

@@ -63,6 +63,7 @@ Golden PR id: `<điền sau khi tạo>` · Branch: `test/golden-review` · File:
 Tạo branch/PR test với 35 file thay đổi:
 ```bash
 git checkout -b test/large-pr
+mkdir -p src/Large
 for i in $(seq 1 35); do printf 'public class F%s {\n  private int x%s = %s;\n}\n' "$i" "$i" "$i" > "src/Large/File$i.cs"; done
 git add src/Large && git commit -m "test: large PR" && git push -u origin test/large-pr
 # tạo PR trên web UI, comment /review

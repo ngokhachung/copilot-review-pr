@@ -85,7 +85,7 @@ try {
 } catch { Write-Host "FAIL: khong liet ke duoc PR - $($_.Exception.Message)"; $fail = $true }
 
 try {
-    $rules = Invoke-RestMethod -Uri "$repoApi/items?path=.review/rules.md&includeContent=true&api-version=7.1" -Headers $headers
+    $rules = Invoke-RestMethod -Uri "$repoApi/items?path=.review/rules.md&includeContent=true&`$format=json&api-version=7.1" -Headers $headers
     Write-Host "PASS: doc duoc .review/rules.md ($($rules.content.Length) ky tu)"
 } catch { Write-Host "WARN: chua co .review/rules.md (se tao o Task 3)" }
 
@@ -162,7 +162,7 @@ function Get-PrChanges { param([int]$PrId, [int]$IterationId)
 function Get-ItemContent { param([string]$Path, [string]$Branch)
     $r = Invoke-Ado -Uri ("$script:RepoApi/items?path=$([uri]::EscapeDataString($Path))" +
         "&versionDescriptor.version=$([uri]::EscapeDataString($Branch))" +
-        "&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1")
+        "&versionDescriptor.versionType=branch&includeContent=true&`$format=json&api-version=7.1")
     $r.content }
 
 function Get-PrThreads { param([int]$PrId)
@@ -216,6 +216,7 @@ function Update-ThreadComment { param([int]$PrId, [int]$ThreadId, [string]$Conte
 $pr = Get-PrMetadata -PrId <PRID>; $pr.status                       # -> active
 Get-PrLatestIterationId -PrId <PRID>                                # -> so nguyen
 (Get-PrChanges -PrId <PRID> -IterationId 1) | ForEach-Object { $_.item.path }
+Get-ItemContent -Path '<FILE>' -Branch '<TARGET-BRANCH>'   # -> in ra noi dung file (xac nhan items API tra JSON)
 $t = New-PrInlineThread -PrId <PRID> -FilePath '/<FILE>' -Line 1 `
      -Content 'test inline' -Fingerprint 'test|X|abc' -Rule 'TEST-01'
 Add-ThreadReply -PrId <PRID> -ThreadId $t.id -Content 'test reply'
@@ -529,7 +530,7 @@ git commit -m "test: add golden PR seed file and scoring checklist"
 
 **Interfaces:**
 - Consumes: `prompts/review-prompt.md` (Task 4), repo GUID (Task 1 Step 6).
-- Produces: solution **PR Review Agent** chứa agent + env vars tên chính xác `prv_ADO_ORG_URL`, `prv_ADO_PROJECT`, `prv_ADO_REPO_ID`, `prv_RULES_PATH`, `prv_TRIGGER_KEYWORD`, `prv_MAX_FILES`, `prv_MAX_LINES`, `prv_BOT_ACCOUNT_ID`, `prv_ADO_PAT` (secret), `prv_WEBHOOK_BASIC` (secret); AI Builder prompt tên **"PR Code Review"**. Task 7–8 tham chiếu đúng các tên này.
+- Produces: solution **PR Review Agent** chứa agent + env vars tên chính xác `prv_ADO_ORG_URL`, `prv_ADO_PROJECT`, `prv_ADO_REPO_ID`, `prv_RULES_PATH`, `prv_TRIGGER_KEYWORD`, `prv_MAX_FILES`, `prv_MAX_LINES`, `prv_BOT_ACCOUNT_ID`, `prv_ADO_PAT` (Text — pilot), `prv_WEBHOOK_BASIC` (Text — pilot); AI Builder prompt tên **"PR Code Review"**. Task 7–8 tham chiếu đúng các tên này.
 
 - [ ] **Step 1 (MANUAL — user, theo hướng dẫn viết ở Step 2):** Thực hiện trên Power Platform:
   1. Power Apps (make.powerapps.com) → chọn environment → **Solutions → New solution**: tên `PR Review Agent`, publisher mới prefix `prv`.
@@ -601,7 +602,7 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     **No** → `Reply_NotActive` (POST comment vào TriggerThreadId nếu >0: "❌ PR không ở trạng thái active.") → Terminate (Succeeded).
 6.  `Compose_SourceBranch` — `@{replace(body('HTTP_GetPR')?['sourceRefName'],'refs/heads/','')}`
 7.  `Compose_TargetBranch` — `@{replace(body('HTTP_GetPR')?['targetRefName'],'refs/heads/','')}`
-8.  `HTTP_GetRules` — GET `@{REPO_API}/items?path=@{encodeUriComponent(parameters('prv_RULES_PATH'))}&versionDescriptor.version=@{encodeUriComponent(outputs('Compose_TargetBranch'))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`
+8.  `HTTP_GetRules` — GET `@{REPO_API}/items?path=@{encodeUriComponent(parameters('prv_RULES_PATH'))}&versionDescriptor.version=@{encodeUriComponent(outputs('Compose_TargetBranch'))}&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1`
 9.  `Cond_RulesExist` — Condition (Configure run after HTTP_GetRules: succeeded **và** failed):
     `@{outputs('HTTP_GetRules')?['statusCode']}` equals `200`.
     **No** → `Reply_NoRules` (POST comment vào TriggerThreadId nếu >0: "❌ Repo chưa có `.review/rules.md` trên target branch — tạo file theo template rồi gọi /review lại.") → Terminate (Succeeded).
@@ -643,9 +644,9 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     Schema: object `{findings: array of {file,line,type,ruleId,severity,message,suggestion,snippet}}` (mọi field string trừ line integer).
     **Retry 1 lần:** `Prompt_Review_2` + `Parse_Findings_2` với Configure run after `Parse_Findings` **has failed**;
     `Append_SkipParse` (run after Parse_Findings_2 failed): append vào varSkipped `@{concat(path, ' (JSON hỏng)')}`.
-23. `Apply_to_each_Finding` — From `@{coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))}`:
+23. `Apply_to_each_Finding` (Configure run after `Append_SkipParse`: is successful **và** is skipped) — From `@{coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))}`:
     Append to varFindings object:
-    `@{addProperty(item(), 'fingerprint', toLower(concat(item()?['file'], '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))}`
+    `@{addProperty(item(), 'fingerprint', toLower(concat(if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file'])), '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))}`
 
 ## Khối C — đối chiếu thread cũ & post
 24. `HTTP_GetThreads` — GET `.../pullRequests/@{...}/threads?api-version=7.1`
@@ -798,6 +799,7 @@ Expected: thread đó **không** bị mở lại, **không** có thread mới tr
 
 ```bash
 git checkout -b test/large-pr
+mkdir -p src/Large
 for i in $(seq 1 35); do printf 'public class F%s {\n  private int x%s = %s;\n}\n' "$i" "$i" "$i" > "src/Large/File$i.cs"; done
 git add src/Large && git commit -m "test: large PR" && git push -u origin test/large-pr
 # tạo PR trên web UI, comment /review

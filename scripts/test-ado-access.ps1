@@ -18,7 +18,7 @@ try {
 } catch { Write-Host "FAIL: khong liet ke duoc PR - $($_.Exception.Message)"; $fail = $true }
 
 try {
-    $rules = Invoke-RestMethod -Uri "$repoApi/items?path=.review/rules.md&includeContent=true&api-version=7.1" -Headers $headers
+    $rules = Invoke-RestMethod -Uri "$repoApi/items?path=.review/rules.md&includeContent=true&`$format=json&api-version=7.1" -Headers $headers
     Write-Host "PASS: doc duoc .review/rules.md ($($rules.content.Length) ky tu)"
 } catch { Write-Host "WARN: chua co .review/rules.md (se tao o Task 3)" }
 

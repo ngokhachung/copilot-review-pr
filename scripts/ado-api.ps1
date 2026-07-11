@@ -28,7 +28,7 @@ function Get-PrChanges { param([int]$PrId, [int]$IterationId)
 function Get-ItemContent { param([string]$Path, [string]$Branch)
     $r = Invoke-Ado -Uri ("$script:RepoApi/items?path=$([uri]::EscapeDataString($Path))" +
         "&versionDescriptor.version=$([uri]::EscapeDataString($Branch))" +
-        "&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1")
+        "&versionDescriptor.versionType=branch&includeContent=true&`$format=json&api-version=7.1")
     $r.content }
 
 function Get-PrThreads { param([int]$PrId)

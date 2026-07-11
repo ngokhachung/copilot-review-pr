@@ -1,9 +1,9 @@
 # Setup guide — AI PR Review Agent (Copilot Studio)
 
 Hướng dẫn cấu hình Power Platform / Copilot Studio cho AI PR Review Agent trên
-Azure DevOps. Tài liệu này là **phần 1**: tạo solution, agent (vỏ chứa), toàn
-bộ environment variable, và Prompt node (AI Builder). Các phần sau (service
-hook, trigger flow, kiểm tra sau khi setup) sẽ được bổ sung ở mục 3–5.
+Azure DevOps. Tài liệu này là **hướng dẫn đầy đủ**, gồm 5 mục: (1) tạo
+solution, agent (vỏ chứa) và toàn bộ environment variable; (2) Prompt node
+(AI Builder); (3) service hook; (4) trigger flow; (5) kiểm tra sau setup.
 
 ## Điều kiện tiên quyết
 
@@ -100,7 +100,11 @@ nằm ngoài JSON → kiểm tra lại đã bật JSON output format ở Prompt 
 1. Tạo flow stub để bắt payload thật (giải quyết "việc mở" trong spec §11):
    agent flow mới **PR Review Trigger**, trigger **When an HTTP request is
    received** (method POST, schema để trống), thêm duy nhất action
-   **Response** (status 200). Save → copy **HTTP POST URL**.
+   **Response** (status 200). Save → copy **HTTP POST URL**. Flow này **bắt
+   buộc** phải được tạo như một agent flow **bên trong** solution/agent
+   **"PR Review Agent"** (Copilot Studio → Agents → PR Review Agent → Flows)
+   — tạo flow rời rạc bên ngoài agent sẽ không truy cập được các biến
+   `parameters('prv_...')` và không dùng được action "Run a Child Flow".
 2. Azure DevOps → **Project settings** → **Service hooks** → `+` →
    **Web Hooks** → Next:
    - Trigger: **Pull request commented on**; Repository = pilot repo; còn lại
