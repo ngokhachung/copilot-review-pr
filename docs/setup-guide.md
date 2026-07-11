@@ -94,3 +94,48 @@ Trong test pane của AI Builder, bấm **Test** với input:
 Kết quả mong đợi: output là JSON hợp lệ `{"findings":[...]}`, có finding
 `SEC-01` tại dòng 20, message viết bằng tiếng Việt. Nếu model trả về text thừa
 nằm ngoài JSON → kiểm tra lại đã bật JSON output format ở Prompt node chưa.
+
+## 3. Service hook
+
+1. Tạo flow stub để bắt payload thật (giải quyết "việc mở" trong spec §11):
+   agent flow mới **PR Review Trigger**, trigger **When an HTTP request is
+   received** (method POST, schema để trống), thêm duy nhất action
+   **Response** (status 200). Save → copy **HTTP POST URL**.
+2. Azure DevOps → **Project settings** → **Service hooks** → `+` →
+   **Web Hooks** → Next:
+   - Trigger: **Pull request commented on**; Repository = pilot repo; còn lại
+     Any.
+   - URL = HTTP POST URL vừa copy ở bước 1; **Basic authentication username**
+     = `hookuser`, password = password gốc đã tạo khi lập `prv_WEBHOOK_BASIC`
+     (mục 1 bên trên); Resource details to send = All.
+   - Bấm **Test** → expected: Succeeded. Finish.
+3. Bắt payload thật: comment `/review` lên Golden PR → mở run history của
+   flow stub → copy toàn bộ trigger body, lưu vào
+   `docs/flow-specs/sample-payload.json` (xoá thông tin nhạy cảm nếu có).
+   Xác nhận các đường dẫn field sau tồn tại (đây là bước kiểm chứng spec
+   §11):
+   - `body.eventType` = `ms.vss-code.git-pullrequest-comment-event`
+   - `body.resource.comment.content`, `body.resource.comment.author.id`
+   - `body.resource.comment._links.self.href` (chứa
+     `/threads/{threadId}/comments/`)
+   - `body.resource.pullRequest.pullRequestId`,
+     `body.resource.pullRequest.status`,
+     `body.resource.pullRequest.repository.id`
+
+   Nếu tên field thực tế khác → cập nhật `docs/flow-specs/trigger-flow.md`
+   theo payload thật trước khi build tiếp.
+
+## 4. Trigger flow
+
+Sau khi đã bắt và xác nhận payload thật ở mục 3, hoàn thiện flow
+**PR Review Trigger** theo `docs/flow-specs/trigger-flow.md` (thay stub
+Response 200 bằng chuỗi action đầy đủ trong spec đó). Save.
+
+Verify end-to-end trên Golden PR:
+
+1. Comment `/review` → expected: bot reply vào thread đó "✅ Review xong — …",
+   threads/summary như mục Review pipeline (Task 7).
+2. Comment `hello` (không keyword) → expected: flow run kết thúc im lặng ở
+   `Cond_Valid`, không có comment bot.
+3. Kiểm tra chống vòng lặp: các reply bot vừa post ở bước (1) có sinh run mới
+   không — expected: run mới kết thúc im lặng tại điều kiện author = bot.
