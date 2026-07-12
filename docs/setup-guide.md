@@ -73,6 +73,14 @@ review thủ công; (5) kiểm tra sau setup.
    > không qua env var). Nếu sau này khôi phục trigger tự động / rule trong
    > repo, xem spec §4 và lịch sử git.
 
+   Cách flow đọc env var: trong expression (fx) dùng
+   `parameters('prv_ADO_ORG_URL')` — tên trong ngoặc là **schema name**
+   (trường "Name" của env var trong solution, không phải Display name; copy
+   chính xác từ đó). Env var cũng hiện trong panel Dynamic content của
+   designer để click chọn. Hai lỗi hay gặp: (a) chạy ra chuỗi rỗng → env var
+   chưa điền **Current Value**; (b) designer không tìm thấy parameter → flow
+   không nằm trong solution (tạo nhầm từ My flows).
+
    ### Lưu ý pilot: `prv_ADO_PAT`
 
    `prv_ADO_PAT` = PAT. **Lưu ý pilot:** dùng Data type **Text** — kiểu Secret
