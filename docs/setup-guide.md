@@ -137,8 +137,22 @@ flow (tạo flow rời rạc bên ngoài solution sẽ không truy cập đượ
 3. Trong trigger vừa thêm → **+ Add an input** → **Number**, đặt tên
    `PullRequestId`; thêm input **Number** thứ hai, đặt tên `TriggerThreadId`.
 4. Build lần lượt 27 action theo đúng `docs/flow-specs/review-pipeline.md`
-   (mỗi action có sẵn tên, loại action và expression để copy). Hai chỗ sẽ hỏi
-   connection lần đầu:
+   (mỗi action có sẵn tên, loại action và expression để copy). Cách hiểu đúng:
+   action **không "gọi" nhau** — bạn xếp chúng nối tiếp từ trên xuống (bấm
+   **+** dưới action trước), engine tự chạy lần lượt; action sau đọc output
+   action trước qua expression (`body('Tên_Action')`...). Ba quy tắc build:
+   - **Rename action đúng y tên trong spec trước khi dán expression** (chọn
+     action → ⋯ → Rename) — expression tham chiếu theo tên, tên khác là vỡ.
+   - **Cấu trúc lồng nhau, không phẳng**: `Scope_Try` bao action 2→27;
+     `Scope_Catch` nằm ngoài; các `Cond_*` là Condition có nhánh Yes/No chứa
+     action con; action 15–23 nằm **bên trong** vòng lặp `Apply_to_each_File`
+     (action 18–23 trong nhánh Yes của `Cond_Budget`).
+   - **Configure run after**: chỗ nào spec ghi "Configure run after" phải
+     chỉnh tay (⋯ trên action) — `Cond_RulesExist`, `Compose_Before`, chuỗi
+     retry `Prompt_Review_2`/`Parse_Findings_2`, `Apply_to_each_Finding`,
+     `Scope_Catch` — vì mặc định action chỉ chạy khi bước trước thành công.
+
+   Hai chỗ sẽ hỏi connection lần đầu:
    - Action 8 (`GetRules_OneNote`): connector **OneNote (Business)** yêu cầu
      đăng nhập → chọn Notebook/Section/Page đã chuẩn bị ở mục 0 bước 2.
    - Action 21 (`Prompt_Review`): action **Run a prompt** — nếu chưa tạo
