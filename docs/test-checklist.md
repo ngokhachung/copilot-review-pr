@@ -35,7 +35,8 @@ Golden PR id: `<điền sau khi tạo>` · Branch: `test/golden-review` · File:
   - Fix finding #2 (NAMING-01): đổi `GetOrder` → `GetOrderAsync`
   - Fix finding #4 (LOG-01): thay `Console.WriteLine(...)` bằng `_logger.LogInformation("order loaded {Id}", id);`
 - Commit + push code
-- Comment `/review` trên Golden PR
+- Chạy tay flow **PR Review Pipeline** với `PullRequestId` = Golden PR id
+  (setup guide mục 3)
 
 **Kết quả kỳ vọng:**
 - 2 thread tương ứng NAMING-01 và LOG-01 được reply "✅ Đã fix" + status Resolved
@@ -48,7 +49,7 @@ Golden PR id: `<điền sau khi tạo>` · Branch: `test/golden-review` · File:
 
 **Các bước:**
 - Tự tay resolve 1 thread bot còn active (ví dụ: NAMING-02) trên web UI **không sửa code**
-- Comment `/review` trên PR
+- Chạy tay flow **PR Review Pipeline** với `PullRequestId` = Golden PR id
 
 **Kết quả kỳ vọng:**
 - Thread đó không bị mở lại
@@ -66,7 +67,7 @@ git checkout -b test/large-pr
 mkdir -p src/Large
 for i in $(seq 1 35); do printf 'public class F%s {\n  private int x%s = %s;\n}\n' "$i" "$i" "$i" > "src/Large/File$i.cs"; done
 git add src/Large && git commit -m "test: large PR" && git push -u origin test/large-pr
-# tạo PR trên web UI, comment /review
+# tạo PR trên web UI, rồi chạy tay PR Review Pipeline với id của PR này
 ```
 
 **Kết quả kỳ vọng:**

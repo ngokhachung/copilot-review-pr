@@ -1,9 +1,14 @@
 # Setup guide — AI PR Review Agent (Copilot Studio)
 
 Hướng dẫn cấu hình Power Platform / Copilot Studio cho AI PR Review Agent trên
-Azure DevOps. Tài liệu này là **hướng dẫn đầy đủ**, gồm 5 mục: (1) tạo
+Azure DevOps. Tài liệu này là **hướng dẫn đầy đủ**, gồm 4 mục: (1) tạo
 solution, agent (vỏ chứa) và toàn bộ environment variable; (2) Prompt node
-(AI Builder); (3) service hook; (4) trigger flow; (5) kiểm tra sau setup.
+(AI Builder); (3) chạy review thủ công; (4) kiểm tra sau setup.
+
+> **Cập nhật 2026-07-12:** bỏ service hook + trigger flow (người vận hành
+> không có quyền "Edit subscriptions" trên Azure DevOps). Pilot chạy review
+> bằng cách **run tay flow PR Review Pipeline** với PR id — xem mục 3. Spec
+> thiết kế đã được amendment tương ứng.
 
 ## Điều kiện tiên quyết
 
@@ -34,20 +39,14 @@ solution, agent (vỏ chứa) và toàn bộ environment variable; (2) Prompt no
    | `prv_ADO_PROJECT` | Text | tên project | Tên project Azure DevOps chứa repo pilot |
    | `prv_ADO_REPO_ID` | Text | *(repo GUID)* | Repo **GUID** — từ Task 1 Step 6, đọc trong output của `scripts/test-ado-access.ps1` |
    | `prv_RULES_PATH` | Text | `.review/rules.md` | Cố định — đường dẫn tới file rule (xem `templates/rules.md`) trong repo |
-   | `prv_TRIGGER_KEYWORD` | Text | `/review` | Cố định |
    | `prv_MAX_FILES` | Number | `30` | Cố định — cap an toàn số file/lần review |
    | `prv_MAX_LINES` | Number | `3000` | Cố định — cap an toàn số dòng thay đổi/lần review |
-   | `prv_BOT_ACCOUNT_ID` | Text | *(GUID của user `svc-pr-review`)* | Chạy script ở mục "Lấy `prv_BOT_ACCOUNT_ID`" bên dưới |
    | `prv_ADO_PAT` | Text | *(PAT của `svc-pr-review`)* | PAT tạo ở Task 1 — xem "Lưu ý pilot" bên dưới |
-   | `prv_WEBHOOK_BASIC` | Text | `base64("hookuser:<mật khẩu ngẫu nhiên>")` | Tạo bằng script ở mục "Lấy `prv_WEBHOOK_BASIC`" bên dưới |
 
-   ### Lấy `prv_BOT_ACCOUNT_ID`
-
-   ```powershell
-   . .\scripts\ado-env.ps1
-   $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$($env:ADO_PAT)"))
-   (Invoke-RestMethod -Uri "$($env:ADO_ORG_URL)/_apis/connectionData" -Headers @{Authorization="Basic $b64"}).authenticatedUser.id
-   ```
+   > Ghi chú: các biến `prv_TRIGGER_KEYWORD`, `prv_BOT_ACCOUNT_ID`,
+   > `prv_WEBHOOK_BASIC` của thiết kế webhook cũ **không còn cần** — chúng chỉ
+   > phục vụ trigger flow đã bị bỏ (amendment 2026-07-12). Nếu sau này khôi
+   > phục trigger tự động, xem spec mục "Hướng mở rộng trigger".
 
    ### Lưu ý pilot: `prv_ADO_PAT`
 
@@ -56,18 +55,6 @@ solution, agent (vỏ chứa) và toàn bộ environment variable; (2) Prompt no
    (`RetrieveEnvironmentVariableSecretValue`), phức tạp không đáng cho pilot.
    Ghi nợ bảo mật: nâng lên KV-backed Secret trước khi nhân rộng (đã ghi trong
    runbook).
-
-   ### Lấy `prv_WEBHOOK_BASIC`
-
-   `prv_WEBHOOK_BASIC` = chuỗi `base64("hookuser:<mật khẩu ngẫu nhiên>")`
-   (Data type **Text**, cùng lưu ý pilot như trên) — tạo:
-
-   ```powershell
-   [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('hookuser:<password>'))
-   ```
-
-   Giữ lại password gốc (chưa base64) — sẽ cần khi cấu hình service hook ở
-   Task 8.
 
 ## 2. Prompt node
 
@@ -95,58 +82,33 @@ Kết quả mong đợi: output là JSON hợp lệ `{"findings":[...]}`, có fi
 `SEC-01` tại dòng 20, message viết bằng tiếng Việt. Nếu model trả về text thừa
 nằm ngoài JSON → kiểm tra lại đã bật JSON output format ở Prompt node chưa.
 
-## 3. Service hook
+## 3. Chạy review (manual run)
 
-1. Tạo flow stub để bắt payload thật (giải quyết "việc mở" trong spec §11):
-   agent flow mới **PR Review Trigger**, trigger **When an HTTP request is
-   received** (method POST, schema để trống), thêm duy nhất action
-   **Response** (status 200). Save → copy **HTTP POST URL**. Flow này **bắt
-   buộc** phải được tạo như một agent flow **bên trong** solution/agent
-   **"PR Review Agent"** (Copilot Studio → Agents → PR Review Agent → Flows)
-   — tạo flow rời rạc bên ngoài agent sẽ không truy cập được các biến
-   `parameters('prv_...')` và không dùng được action "Run a Child Flow".
-2. Azure DevOps → **Project settings** → **Service hooks** → `+` →
-   **Web Hooks** → Next:
-   - Trigger: **Pull request commented on**; Repository = pilot repo; còn lại
-     Any.
-   - URL = HTTP POST URL vừa copy ở bước 1; **Basic authentication username**
-     = `hookuser`, password = password gốc đã tạo khi lập `prv_WEBHOOK_BASIC`
-     (mục 1 bên trên); Resource details to send = All.
-   - Bấm **Test** → expected: Succeeded. Finish.
-3. Bắt payload thật: comment `/review` lên Golden PR → mở run history của
-   flow stub → copy toàn bộ trigger body, lưu vào
-   `docs/flow-specs/sample-payload.json` (xoá thông tin nhạy cảm nếu có).
-   Xác nhận các đường dẫn field sau tồn tại (đây là bước kiểm chứng spec
-   §11):
-   - `body.eventType` = `ms.vss-code.git-pullrequest-comment-event`
-   - `body.resource.comment.content`, `body.resource.comment.author.id`
-   - `body.resource.comment._links.self.href` (chứa
-     `/threads/{threadId}/comments/`)
-   - `body.resource.pullRequest.pullRequestId`,
-     `body.resource.pullRequest.status`,
-     `body.resource.pullRequest.repository.id`
+Pilot dùng cơ chế **chạy thủ công** — không có trigger tự động, không cần
+quyền tạo service hook trên Azure DevOps:
 
-   Nếu tên field thực tế khác → cập nhật `docs/flow-specs/trigger-flow.md`
-   theo payload thật trước khi build tiếp.
+1. Vào Copilot Studio → **Agents → PR Review Agent → Flows** → mở flow
+   **PR Review Pipeline** (flow này phải được tạo như agent flow **bên trong**
+   solution/agent "PR Review Agent" — tạo flow rời rạc bên ngoài sẽ không truy
+   cập được các biến `parameters('prv_...')`).
+2. Bấm **Test → Manually** (hoặc Run), nhập:
+   - `PullRequestId` = id của PR — là **số cuối trong URL** của PR
+     (`.../pullrequest/123` → nhập `123`).
+   - `TriggerThreadId` = `0` (luôn là 0 khi chạy tay).
+3. Chờ run kết thúc — kết quả xuất hiện trực tiếp trên PR: inline comment
+   đúng file/dòng + 1 summary comment. Run Failed → mở run history xem action
+   nào lỗi (chẩn đoán theo `docs/runbook.md`).
+4. **Re-review sau khi dev fix:** chạy lại flow với đúng `PullRequestId` đó —
+   bot tự resolve các thread đã fix, không post trùng finding cũ.
 
-## 4. Trigger flow
+Người chạy cần quyền truy cập environment Power Platform chứa solution. Nếu
+sau này muốn khôi phục trigger tự động bằng comment `/review` (cần admin tạo
+service hook, hoặc dùng polling), pipeline **không cần sửa gì** — chỉ cần thêm
+một flow trigger gọi nó; xem mục "Hướng mở rộng trigger" trong spec.
 
-Sau khi đã bắt và xác nhận payload thật ở mục 3, hoàn thiện flow
-**PR Review Trigger** theo `docs/flow-specs/trigger-flow.md` (thay stub
-Response 200 bằng chuỗi action đầy đủ trong spec đó). Save.
+## 4. Kiểm tra sau setup
 
-Verify end-to-end trên Golden PR:
-
-1. Comment `/review` → expected: bot reply vào thread đó "✅ Review xong — …",
-   threads/summary như mục Review pipeline (Task 7).
-2. Comment `hello` (không keyword) → expected: flow run kết thúc im lặng ở
-   `Cond_Valid`, không có comment bot.
-3. Kiểm tra chống vòng lặp: các reply bot vừa post ở bước (1) có sinh run mới
-   không — expected: run mới kết thúc im lặng tại điều kiện author = bot.
-
-## 5. Kiểm tra sau setup
-
-Sau khi hoàn tất mục 1–4, chạy lần lượt các bước sau để xác nhận toàn bộ hệ
+Sau khi hoàn tất mục 1–3, chạy lần lượt các bước sau để xác nhận toàn bộ hệ
 thống hoạt động đúng trước khi bắt đầu pilot:
 
 1. Chạy `scripts/test-ado-access.ps1` → expected: 2 dòng PASS
@@ -155,13 +117,13 @@ thống hoạt động đúng trước khi bắt đầu pilot:
    được).
 2. Test Prompt node trong test pane của AI Builder theo đúng input/kết quả
    mong đợi đã mô tả ở mục "Kiểm tra phần này" (mục 2 bên trên).
-3. Vào flow designer của **PR Review Pipeline** → Test → Manually: nhập
-   `PullRequestId` = Golden PR id (xem `docs/test-checklist.md`),
-   `TriggerThreadId` = `0` → expected: run Succeeded, có inline comment đúng
-   file/dòng và 1 summary comment trên Golden PR.
-4. Comment `/review` lên Golden PR để test end-to-end qua service hook +
-   trigger flow → expected: bot phản hồi như mô tả ở mục "Verify end-to-end
-   trên Golden PR" (mục 4 bên trên).
+3. Chạy tay **PR Review Pipeline** theo mục 3 với `PullRequestId` = Golden PR
+   id (xem `docs/test-checklist.md`) → expected: run Succeeded, có inline
+   comment đúng file/dòng và 1 summary comment trên Golden PR (chấm điểm theo
+   checklist).
+4. Chạy lại pipeline lần nữa với cùng `PullRequestId` → expected: **không**
+   sinh thread trùng (idempotency), summary được update chứ không tạo thread
+   mới.
 
 Nếu bước nào không đạt, xem `docs/runbook.md` (mục "Sự cố thường gặp") để
 chẩn đoán.

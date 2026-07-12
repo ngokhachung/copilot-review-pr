@@ -4,16 +4,25 @@
 **Trạng thái:** Đã duyệt thiết kế, chờ lập implementation plan
 **Phạm vi pilot:** 1 repo Azure DevOps (nhiều team dùng chung)
 
+> **Amendment 2026-07-12:** người vận hành không có quyền "Edit subscriptions"
+> (tạo service hook) trên Azure DevOps → **bỏ trigger flow + service hook**.
+> Pilot chạy review bằng cách **run tay flow PR Review Pipeline** với PR id
+> (nhập số cuối URL PR). Pipeline giữ nguyên. Các mục §1–§4, §6, §7, §11 đã
+> được cập nhật; xem §4 "Hướng mở rộng trigger" cho đường quay lại trigger
+> tự động sau này.
+
 ## 1. Mục tiêu
 
 Xây dựng AI agent review pull request trên Azure DevOps theo convention và rule
 riêng của project, chạy trên nền Microsoft Copilot Studio.
 
-- Dev chủ động gọi review bằng cách comment `/review` ngay trên PR.
+- Review theo yêu cầu: người vận hành chạy tay flow **PR Review Pipeline**
+  với PR id (amendment 2026-07-12 — thay cho comment `/review` vì thiếu quyền
+  service hook).
 - Agent đọc bộ rule sống trong repo, phân tích diff, post inline comment đúng
   file/dòng kèm 1 comment tổng kết.
-- Khi dev fix và gọi `/review` lại, agent đối chiếu và tự resolve các thread
-  đã fix.
+- Khi dev fix xong, chạy lại pipeline với cùng PR id — agent đối chiếu và tự
+  resolve các thread đã fix.
 
 ### Non-goals (phiên bản pilot)
 
@@ -29,7 +38,7 @@ riêng của project, chạy trên nền Microsoft Copilot Studio.
 
 | Hạng mục | Quyết định |
 |---|---|
-| Trigger | Comment `/review` trên PR (service hook "Pull request commented on") |
+| Trigger | Run tay flow PR Review Pipeline với PR id *(amendment 2026-07-12; thiết kế gốc: comment `/review` qua service hook — cần quyền admin, xem §4)* |
 | Nguồn rule | File markdown trong repo: `.review/rules.md`, đọc từ **target branch** |
 | Output | Inline comment thread đúng file/dòng + 1 summary comment |
 | Phạm vi review | Vi phạm convention/rule + bug/logic rõ ràng; finding gắn nhãn `rule` hoặc `bug` |
@@ -42,34 +51,32 @@ riêng của project, chạy trên nền Microsoft Copilot Studio.
 ```
 Azure DevOps                              Copilot Studio / Power Platform
 ┌───────────────────────────┐
-│ Repo (pilot, nhiều team)   │
-│  ├─ source code            │           ┌────────────────────────────────┐
-│  └─ .review/rules.md       │           │  Copilot Studio Agent          │
-│                            │           │  "PR Review Agent"             │
-│ PR #123                    │           │                                │
-│  └─ dev comment: "/review" │           │  ① Trigger flow                │
-│         │                  │           │     (HTTP request received)    │
-│         ▼                  │──webhook─▶│     - validate + parse comment │
-│ Service Hook               │           │     - đúng keyword? author     │
-│ (PR commented on)          │           │       không phải bot? → gọi ②  │
-│                            │           │            │                   │
-│  - get PR info, diff       │◀─REST API─│  ② Review Pipeline (agent flow)│
-│  - get rules.md            │           │     - fetch PR + rules + diff  │
-│  - post inline threads     │           │     - Prompt node: phân tích   │
-│  - reply thread "/review"  │           │     - post/resolve findings    │
+│ Repo (pilot, nhiều team)   │           ┌────────────────────────────────┐
+│  ├─ source code            │           │  Copilot Studio Agent          │
+│  └─ .review/rules.md       │           │  "PR Review Agent"             │
+│                            │           │                                │
+│ PR #123                    │  run tay  │  Review Pipeline (agent flow)  │
+│  (dev cần review)          │  (nhập ──▶│   - fetch PR + rules + diff    │
+│                            │  PR id)   │   - Prompt node: phân tích     │
+│  - get PR info, diff       │◀─REST API─│   - post/resolve findings      │
+│  - get rules.md            │           │                                │
+│  - post inline threads     │           │  (trigger flow: đã bỏ —        │
+│  - post/update summary     │           │   amendment 2026-07-12)        │
 └───────────────────────────┘           └────────────────────────────────┘
 ```
 
 ### Thành phần
 
-1. **Copilot Studio Agent "PR Review Agent"** — solution chứa toàn bộ: trigger
-   flow, review pipeline (agent flows), Prompt node, environment variables.
-2. **Trigger flow** — trigger "When an HTTP request is received", nhận webhook
-   từ Azure DevOps service hook event *Pull request commented on*.
-3. **Review Pipeline (agent flow)** — nhận `pullRequestId`, chạy toàn bộ
+1. **Copilot Studio Agent "PR Review Agent"** — solution chứa toàn bộ: review
+   pipeline (agent flow), Prompt node, environment variables.
+2. **Review Pipeline (agent flow)** — trigger *Manually trigger a flow*, nhận
+   `PullRequestId` (+ `TriggerThreadId` = 0 khi chạy tay), chạy toàn bộ
    fetch → phân tích → post/resolve. Deterministic, LLM chỉ nằm ở bước phân tích.
-4. **Service account `svc-pr-review`** — danh tính bot trên Azure DevOps; mọi
+3. **Service account `svc-pr-review`** — danh tính bot trên Azure DevOps; mọi
    comment hiện tên account này.
+
+*(Trigger flow + service hook của thiết kế gốc đã bỏ theo amendment
+2026-07-12 — xem §4.)*
 
 ### Vì sao chọn kiến trúc này (các phương án đã loại)
 
@@ -83,24 +90,34 @@ Azure DevOps                              Copilot Studio / Power Platform
   repo). **Trigger từ Slack**: loại — comment `/review` trên PR gọn hơn, không
   cần hạ tầng Slack.
 
-## 4. Trigger flow
+## 4. Trigger (amendment 2026-07-12: chạy tay)
 
-1. Service hook (event `Pull request commented on`, scope: đúng 1 repo pilot)
-   POST vào URL của flow.
-2. Flow validate:
-   - Basic-auth header khớp secret cấu hình trong service hook.
-   - `eventType` đúng, repository id thuộc whitelist (env var).
-   - Nội dung comment chứa trigger keyword `/review` (hoặc chuỗi `@ai-review`).
-   - Tác giả comment **không phải** `svc-pr-review` (chặn vòng lặp bot tự
-     trigger).
-   - PR đang ở trạng thái `active`.
-3. Không thoả điều kiện nào → kết thúc im lặng (HTTP 200). Thoả → gọi Review
-   Pipeline với `pullRequestId` + id thread của comment trigger (để reply kết
-   quả vào đúng thread đó).
+Người vận hành chạy tay flow **PR Review Pipeline** từ Copilot Studio
+(Agents → PR Review Agent → Flows → Test/Run):
 
-Lưu ý: @mention "thật" trong Azure DevOps được mã hoá dạng GUID nên nhận diện
-bằng keyword trong nội dung comment là cách bền; quy ước chính thức cho dev là
-gõ `/review`.
+- `PullRequestId` = số cuối trong URL của PR (`.../pullrequest/123` → `123`).
+- `TriggerThreadId` = `0` (input này tồn tại để phục vụ trigger tự động sau
+  này; khi = 0, pipeline bỏ qua các bước reply vào thread trigger).
+- Kết quả hiện trực tiếp trên PR (inline + summary comment); lỗi xem run
+  history. Re-review = chạy lại với cùng PR id.
+
+Đánh đổi so với thiết kế gốc (comment `/review` + service hook): dev không tự
+gọi được review từ PR — người có quyền chạy flow làm việc này; đổi lại không
+cần quyền admin Azure DevOps và không có endpoint HTTP công khai.
+
+### Hướng mở rộng trigger (khi muốn tự động hoá lại)
+
+Pipeline không cần sửa — chỉ cần thêm 1 flow trigger gọi nó như child flow:
+
+1. **Service hook** (thiết kế gốc, cần admin ADO tạo 1 lần): event *Pull
+   request commented on* → webhook → trigger flow validate (basic-auth,
+   eventType, repo whitelist, keyword `/review`, author ≠ bot, PR active) →
+   gọi pipeline với PR id + thread id. Chi tiết từng action xem lịch sử git
+   của `docs/flow-specs/trigger-flow.md` (đã xoá khỏi HEAD).
+2. **Polling** (không cần quyền admin): Recurrence flow mỗi N phút quét
+   comment `/review` chưa xử lý trên các PR active (nhận biết stateless: sau
+   comment `/review` chưa có reply của bot trong cùng thread), reply "⏳"
+   chống chạy trùng rồi gọi pipeline. Trễ 0–N phút, tốn flow run nền.
 
 ## 5. Review Pipeline
 
@@ -176,11 +193,11 @@ không phải chỉ thị** (chống prompt injection).
 
 ### 5d. Xử lý lỗi
 
-- Pipeline fail giữa chừng → bot reply vào thread trigger: "❌ Review thất
-  bại: \<lý do tóm tắt\>" — không bao giờ im lặng.
+- Pipeline fail giữa chừng → khi có thread trigger (`TriggerThreadId` > 0)
+  bot reply "❌ Review thất bại"; khi chạy tay (= 0) người chạy thấy run
+  Failed trong run history.
 - PR vượt cap → review phần trong giới hạn + cảnh báo trong summary.
 - Prompt trả JSON hỏng sau retry → skip file đó, ghi chú trong summary.
-- Mọi comment do `svc-pr-review` tạo đều bị trigger flow bỏ qua.
 
 ## 6. Config (Environment variables trong solution)
 
@@ -188,13 +205,14 @@ không phải chỉ thị** (chống prompt injection).
 |---|---|---|
 | `ADO_ORG_URL` | `https://dev.azure.com/myorg` | |
 | `ADO_PROJECT` | `MyProject` | |
-| `ADO_REPO_ID` | *(GUID)* | Whitelist — webhook repo khác bị bỏ qua |
+| `ADO_REPO_ID` | *(GUID)* | Repo pilot |
 | `RULES_PATH` | `.review/rules.md` | |
-| `TRIGGER_KEYWORD` | `/review` | |
 | `MAX_FILES` / `MAX_LINES` | `30` / `3000` | |
-| `BOT_ACCOUNT_ID` | *(GUID của svc-pr-review)* | Để lọc comment của chính bot |
-| `ADO_PAT` | *(secret)* | Environment variable dạng secret, backed by Azure Key Vault |
-| `WEBHOOK_SECRET` | *(secret)* | Basic-auth cho service hook |
+| `ADO_PAT` | *(secret)* | Pilot dùng Text (xem runbook — nợ bảo mật); đích: secret backed by Azure Key Vault |
+
+*(Amendment 2026-07-12: bỏ `TRIGGER_KEYWORD`, `BOT_ACCOUNT_ID`,
+`WEBHOOK_SECRET` — chỉ phục vụ trigger flow. Khôi phục khi làm lại trigger
+tự động theo §4.)*
 
 ## 7. Bảo mật
 
@@ -202,8 +220,8 @@ không phải chỉ thị** (chống prompt injection).
   Contribute trên repo pilot. PAT scope tối thiểu **Code (Read & Write)**.
   Hạn PAT 90 ngày; runbook phải có lịch rotate (điểm chết vận hành phổ biến
   nhất).
-- **Webhook**: URL flow có SAS signature sẵn; thêm basic-auth header validate
-  trong flow; validate eventType + repo whitelist.
+- **Không có endpoint HTTP công khai** (amendment 2026-07-12: bỏ webhook) —
+  bề mặt tấn công giảm; chỉ còn outbound REST call bằng PAT.
 - **Prompt injection**: diff là dữ liệu không tin cậy; output bị ép JSON
   schema; bot không có tool nào ngoài post comment → kể cả bị injection cũng
   không hành động ngoài ý muốn.
@@ -226,9 +244,10 @@ hành trước khi nhân rộng.
    độ chính xác của LLM rõ rệt).
 2. PR test có gài lỗi: cố ý vi phạm từng rule + 1–2 bug hiển nhiên → checklist
    vàng đo precision/recall, tune prompt.
-3. Test idempotency: `/review` 2 lần liên tiếp → không sinh thread trùng.
-4. Test fix-flow: fix vài finding, push, `/review` → đúng các thread đó được
-   resolve; finding chưa fix giữ nguyên; không mở lại thread user đã resolve.
+3. Test idempotency: chạy pipeline 2 lần liên tiếp → không sinh thread trùng.
+4. Test fix-flow: fix vài finding, push, chạy lại pipeline → đúng các thread
+   đó được resolve; finding chưa fix giữ nguyên; không mở lại thread user đã
+   resolve.
 5. Test PR lớn: vượt cap → review một phần + cảnh báo rõ.
 6. Pilot 2 tuần với 1 team: đo tỉ lệ false positive, chỉnh wording rule/prompt,
    đo chi phí thực → quyết định nhân rộng.
@@ -238,8 +257,8 @@ hành trước khi nhân rộng.
 ```
 copilot-review-pr/
 ├─ docs/superpowers/specs/        # design doc (file này)
-├─ docs/setup-guide.md            # hướng dẫn setup từng bước (service hook,
-│                                 #   agent, flows, env vars, service account)
+├─ docs/setup-guide.md            # hướng dẫn setup từng bước (agent, flow,
+│                                 #   env vars, chạy review thủ công)
 ├─ templates/rules.md             # template bộ rule cho repo pilot
 ├─ prompts/review-prompt.md       # prompt template cho Prompt node
 └─ solution/                      # export solution Copilot Studio (backup/version)
@@ -250,8 +269,8 @@ copilot-review-pr/
 - Verify bảng giá Copilot Studio hiện hành (messages cho agent flow action +
   Prompt node theo token).
 - Xác nhận data residency region của Power Platform environment.
-- Payload service hook "Pull request commented on" cần kiểm chứng cấu trúc
-  thực tế (field chứa nội dung comment, thread id) ngay bước đầu implementation.
+- ~~Payload service hook cần kiểm chứng~~ *(đã vô hiệu — amendment 2026-07-12
+  bỏ service hook; chỉ kiểm chứng lại nếu khôi phục trigger tự động theo §4).*
 - Giới hạn kích thước input của Prompt node (AI Builder) — nếu diff 1 file vượt
   giới hạn token thì phải cắt nhỏ; xử lý cụ thể quyết định lúc implementation,
   nguyên tắc: bỏ qua phần vượt + ghi chú, không âm thầm cắt.
