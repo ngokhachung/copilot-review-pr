@@ -169,7 +169,11 @@ Quy ước dùng lại nhiều lần:
 
 **21. `Prompt_Review`** — loại **Run a prompt** (AI Builder)
 - Prompt: chọn **PR Code Review** (hoặc tạo mới tại đây — setup guide mục 2 Cách B)
-- Map 4 input:
+- Map 4 input — lưu ý: 4 ô này nằm trong **action ở flow designer** (hiện ra
+  ngay dưới dropdown sau khi chọn prompt), KHÔNG phải trong prompt editor.
+  Prompt editor chỉ định nghĩa placeholder `{...}` (không có fx ở đó); còn 4 ô
+  của action là ô flow bình thường — click vào có fx/Dynamic content, điền
+  giá trị runtime cho từng placeholder:
   - `RulesMarkdown` (fx): `body('HtmlToText_Rules')`
   - `FilePath` (fx): `items('Apply_to_each_File')?['item']?['path']`
   - `BeforeContent` (fx): `outputs('Compose_Before')`
