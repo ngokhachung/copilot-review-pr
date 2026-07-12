@@ -713,7 +713,7 @@ git commit -m "feat: review pipeline flow spec (fetch, analyze, post, resolve)"
 
 > **Amendment 2026-07-12 — Task này đã bị thay thế.** Người vận hành không có
 > quyền tạo service hook trên Azure DevOps. Trigger chuyển thành **chạy tay
-> flow PR Review Pipeline** (xem spec §4 amendment + setup guide mục 3).
+> flow PR Review Pipeline** (xem spec §4 amendment + setup guide mục 4).
 > `docs/flow-specs/trigger-flow.md` đã xoá khỏi HEAD (còn trong lịch sử git);
 > env vars `prv_TRIGGER_KEYWORD` / `prv_BOT_ACCOUNT_ID` / `prv_WEBHOOK_BASIC`
 > không còn cần. Nội dung dưới đây giữ làm tư liệu lịch sử, tái sử dụng nếu

@@ -36,7 +36,7 @@ Golden PR id: `<điền sau khi tạo>` · Branch: `test/golden-review` · File:
   - Fix finding #4 (LOG-01): thay `Console.WriteLine(...)` bằng `_logger.LogInformation("order loaded {Id}", id);`
 - **Commit** (web editor commit thẳng vào branch)
 - Chạy tay flow **PR Review Pipeline** với `PullRequestId` = Golden PR id
-  (setup guide mục 3)
+  (setup guide mục 4)
 
 **Kết quả kỳ vọng:**
 - 2 thread tương ứng NAMING-01 và LOG-01 được reply "✅ Đã fix" + status Resolved

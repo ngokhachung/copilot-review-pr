@@ -1,9 +1,10 @@
 # Setup guide — AI PR Review Agent (Copilot Studio)
 
 Hướng dẫn cấu hình Power Platform / Copilot Studio cho AI PR Review Agent trên
-Azure DevOps. Tài liệu này là **hướng dẫn đầy đủ**, gồm 5 mục: (0) chuẩn bị
-trên Azure DevOps; (1) tạo solution, agent (vỏ chứa) và environment variable;
-(2) Prompt node (AI Builder); (3) chạy review thủ công; (4) kiểm tra sau setup.
+Azure DevOps. Tài liệu này là **hướng dẫn đầy đủ**: (0) chuẩn bị trên Azure
+DevOps & OneNote; (1) tạo solution, agent (vỏ chứa) và environment variable;
+(2) Prompt node (AI Builder); (3) build flow PR Review Pipeline; (4) chạy
+review thủ công; (5) kiểm tra sau setup.
 
 > **Cập nhật 2026-07-12:** bỏ service hook + trigger flow (người vận hành
 > không có quyền "Edit subscriptions" trên Azure DevOps). Pilot chạy review
@@ -117,15 +118,46 @@ Kết quả mong đợi: output là JSON hợp lệ `{"findings":[...]}`, có fi
 `SEC-01` tại dòng 20, message viết bằng tiếng Việt. Nếu model trả về text thừa
 nằm ngoài JSON → kiểm tra lại đã bật JSON output format ở Prompt node chưa.
 
-## 3. Chạy review (manual run)
+## 3. Build flow "PR Review Pipeline"
+
+Làm rõ thuật ngữ: **agent flow chính là flow Power Automate** — cùng một
+designer, cùng loại action — chỉ khác là được tạo/quản lý **bên trong Copilot
+Studio** (thuộc agent) và tính phí qua capacity Copilot Studio, nên không cần
+license Power Automate Premium riêng cho HTTP connector. Guide này dùng agent
+flow (tạo flow rời rạc bên ngoài solution sẽ không truy cập được các biến
+`parameters('prv_...')`).
+
+1. Vào **copilotstudio.microsoft.com** → kiểm tra **Environment** (góc trên
+   phải) đúng environment chứa solution → **Agents** → mở agent
+   **PR Review Agent** (tạo ở mục 1) → tab **Flows** → **+ New agent flow**.
+   Designer mở ra — giao diện chính là Power Automate.
+2. Designer mặc định có trigger **"When an agent calls the flow"** — xoá
+   trigger này (chọn trigger → Delete), bấm **Add a trigger**, tìm
+   **"Manually trigger a flow"** (nhóm *Flow button / Manual*) và thêm vào.
+3. Trong trigger vừa thêm → **+ Add an input** → **Number**, đặt tên
+   `PullRequestId`; thêm input **Number** thứ hai, đặt tên `TriggerThreadId`.
+4. Build lần lượt 27 action theo đúng `docs/flow-specs/review-pipeline.md`
+   (mỗi action có sẵn tên, loại action và expression để copy). Hai chỗ sẽ hỏi
+   connection lần đầu:
+   - Action 8 (`GetRules_OneNote`): connector **OneNote (Business)** yêu cầu
+     đăng nhập → chọn Notebook/Section/Page đã chuẩn bị ở mục 0 bước 2.
+   - Action 21 (`Prompt_Review`): action **Run a prompt** — nếu chưa tạo
+     prompt ở mục 2 thì tạo tại đây theo Cách B (mục 2).
+5. **Save** flow với tên `PR Review Pipeline`.
+
+Dự phòng: nếu tenant của bạn không cho đổi trigger manual trong agent flow,
+tạo cloud flow trong solution thay thế (make.powerapps.com → Solutions →
+PR Review Agent → **New → Automation → Cloud flow → Instant** → "Manually
+trigger a flow") — cùng designer, nhưng HTTP connector khi đó cần license
+Power Automate Premium; nếu bị chặn license, quay lại đường agent flow.
+
+## 4. Chạy review (manual run)
 
 Pilot dùng cơ chế **chạy thủ công** — không có trigger tự động, không cần
 quyền tạo service hook trên Azure DevOps:
 
 1. Vào Copilot Studio → **Agents → PR Review Agent → Flows** → mở flow
-   **PR Review Pipeline** (flow này phải được tạo như agent flow **bên trong**
-   solution/agent "PR Review Agent" — tạo flow rời rạc bên ngoài sẽ không truy
-   cập được các biến `parameters('prv_...')`).
+   **PR Review Pipeline** (đã build ở mục 3).
 2. Bấm **Test → Manually** (hoặc Run), nhập:
    - `PullRequestId` = id của PR — là **số cuối trong URL** của PR
      (`.../pullrequest/123` → nhập `123`).
@@ -141,14 +173,14 @@ sau này muốn khôi phục trigger tự động bằng comment `/review` (cầ
 service hook, hoặc dùng polling), pipeline **không cần sửa gì** — chỉ cần thêm
 một flow trigger gọi nó; xem mục "Hướng mở rộng trigger" trong spec.
 
-## 4. Kiểm tra sau setup
+## 5. Kiểm tra sau setup
 
-Sau khi hoàn tất mục 0–3, chạy lần lượt các bước sau để xác nhận toàn bộ hệ
+Sau khi hoàn tất mục 0–4, chạy lần lượt các bước sau để xác nhận toàn bộ hệ
 thống hoạt động đúng trước khi bắt đầu pilot:
 
 1. Test Prompt node trong test pane của AI Builder theo đúng input/kết quả
    mong đợi đã mô tả ở mục "Kiểm tra phần này" (mục 2 bên trên).
-2. Chạy tay **PR Review Pipeline** theo mục 3 với `PullRequestId` = Golden PR
+2. Chạy tay **PR Review Pipeline** theo mục 4 với `PullRequestId` = Golden PR
    id (tạo ở mục 0 bước 4, id ghi trong `docs/test-checklist.md`) → expected:
    run Succeeded, có inline comment đúng file/dòng và 1 summary comment trên
    Golden PR (chấm điểm theo checklist).
