@@ -82,7 +82,18 @@ trên Azure DevOps; (1) tạo solution, agent (vỏ chứa) và environment vari
 
 ## 2. Prompt node
 
-1. Vào **AI hub → Prompts → New prompt**, đặt tên `PR Code Review`.
+1. Mở prompt builder theo một trong hai cách, rồi đặt tên prompt là
+   `PR Code Review`:
+   - **Cách A:** vào make.powerapps.com (hoặc make.powerautomate.com) →
+     kiểm tra **Environment** góc trên phải đúng environment chứa solution →
+     sidebar trái tìm **AI hub**; nếu không thấy, bấm **More (⋯)** cuối
+     sidebar → "Discover all" → nhóm **AI** → **AI hub** (ghim lại để lần
+     sau hiện sẵn) → mục **Prompts** → **New prompt** (có bản UI ghi "Build
+     your own prompt").
+   - **Cách B (khó lạc hơn):** lúc build flow tới action **Run a prompt**
+     (action 21 trong flow spec), trong dropdown chọn prompt bấm
+     **+ New custom prompt** → prompt builder mở ngay tại chỗ, đảm bảo đúng
+     environment và flow thấy prompt ngay.
 2. Dán nguyên văn phần "Prompt text" trong `prompts/review-prompt.md` vào nội
    dung prompt.
 3. Tạo đúng 4 input variables (Data type Text): `RulesMarkdown`, `FilePath`,
