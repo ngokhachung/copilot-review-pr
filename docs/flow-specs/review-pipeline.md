@@ -15,6 +15,13 @@ Quy ước dùng lại nhiều lần:
   Action POST/PATCH thêm header thứ hai: `Content-Type` = `application/json` (text).
 - Trigger inputs: `PullRequestId` = `triggerBody()['number']`,
   `TriggerThreadId` = `triggerBody()['number_1']` (hoặc chọn token từ Dynamic content).
+- **Ô Body của action HTTP** là ô văn bản tự do (đừng nhầm với Queries — bảng
+  key–value cho tham số URL, ta không dùng): dán khung JSON như text rồi thay
+  từng ký hiệu ❶❷❸ bằng token fx — cảnh báo JSON đỏ trong lúc còn ký hiệu là
+  bình thường, thay hết là hết. Nếu designer vẫn không chịu: thêm 1 action
+  **Compose** ngay trước (ví dụ `Compose_ThreadBody`), dán khung + token vào ô
+  Inputs của Compose, rồi Body của HTTP action chỉ còn fx
+  `outputs('Compose_ThreadBody')`.
 - Pilot chạy tay: `TriggerThreadId` luôn = 0 → các bước "Reply vào thread
   trigger" được lược bỏ, thay bằng Terminate như ghi ở từng chỗ.
 
