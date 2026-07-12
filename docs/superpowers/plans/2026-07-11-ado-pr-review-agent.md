@@ -605,6 +605,7 @@ Mọi action tên `HTTP_*` = action **HTTP** built-in (Add an action → gõ "HT
 Mọi HTTP action: header `Authorization` = `concat('Basic ', base64(concat(':', parameters('prv_ADO_PAT'))))`, retry policy mặc định.
 Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure run after: has failed, has timed out) ở cuối.
 Ghi chú đọc spec: "Khối A/B/C" chỉ là tiêu đề tài liệu — **không phải** object trong designer. Container thật trong flow chỉ gồm: `Scope_Try`/`Scope_Catch` (action **Scope**, nhóm Control), các `Cond_*` (action **Condition**, action con nằm trong nhánh Yes/No), và `Apply_to_each_File` (action **Apply to each** — toàn bộ Khối B nằm bên trong nó). Khối A và C là action xếp nối tiếp bình thường trong Scope_Try.
+Quy ước Condition "gác cổng" (`Cond_Active`, `Cond_RulesExist`): nhánh **Yes để trống**, action kế tiếp đặt **sau** khối Condition (điều kiện đúng → flow rơi xuống chạy tiếp); nhánh **No** chứa đúng những gì ghi sau "**No** →" và kết thúc bằng **Terminate** (Status = Succeeded — kết cục hợp lệ, không phải lỗi). Riêng `Cond_Budget` là ngoại lệ: action 18–23 nằm trong nhánh Yes như spec ghi. Các `Reply_*` gated "nếu >0": pilot chạy tay luôn truyền TriggerThreadId=0 nên có thể bỏ qua, chỉ giữ Terminate.
 
 ## Khối A — fetch & validate
 1.  `Init_varSkipped` — Initialize variable, Array, `[]`
