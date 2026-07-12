@@ -599,7 +599,9 @@ Flow lớn nhất — build theo spec action-by-action dưới đây (spec này 
 
 Trigger: **Manually trigger a flow** — inputs: `PullRequestId` (Number), `TriggerThreadId` (Number).
 Quy ước: `REPO_API = concat(env prv_ADO_ORG_URL, '/', prv_ADO_PROJECT, '/_apis/git/repositories/', prv_ADO_REPO_ID)`.
-Mọi HTTP action: header `Authorization: Basic @{base64(concat(':', <prv_ADO_PAT>))}` , retry policy mặc định.
+Mọi action tên `HTTP_*` = action **HTTP** built-in (Add an action → gõ "HTTP" → chọn action tên "HTTP"), điền Method + URI + Headers (+ Body với POST/PATCH). `@{REPO_API}` là ký hiệu viết tắt của tài liệu — trong ô URI phải dán expression ghép đầy đủ, ví dụ `HTTP_GetPR`:
+`concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '?api-version=7.1')`.
+Mọi HTTP action: header `Authorization` = `concat('Basic ', base64(concat(':', parameters('prv_ADO_PAT'))))`, retry policy mặc định.
 Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure run after: has failed, has timed out) ở cuối.
 Ghi chú đọc spec: "Khối A/B/C" chỉ là tiêu đề tài liệu — **không phải** object trong designer. Container thật trong flow chỉ gồm: `Scope_Try`/`Scope_Catch` (action **Scope**, nhóm Control), các `Cond_*` (action **Condition**, action con nằm trong nhánh Yes/No), và `Apply_to_each_File` (action **Apply to each** — toàn bộ Khối B nằm bên trong nó). Khối A và C là action xếp nối tiếp bình thường trong Scope_Try.
 
