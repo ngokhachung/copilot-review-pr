@@ -1,99 +1,370 @@
-# Flow spec: PR Review Pipeline
+# Flow spec: PR Review Pipeline — bản build-ready
 
-Trigger: **Manually trigger a flow** — inputs: `PullRequestId` (Number), `TriggerThreadId` (Number).
-Quy ước: `REPO_API = concat(env prv_ADO_ORG_URL, '/', prv_ADO_PROJECT, '/_apis/git/repositories/', prv_ADO_REPO_ID)`.
-Cách nhập expression: `@{...}` trong spec chỉ là ký hiệu đánh dấu "đây là expression" — khi nhập vào designer, bấm nút **fx** (Insert expression) và dán phần **bên trong** `@{...}`, **không gõ ký tự `@{` `}`**. Nhập đúng thì ô hiển thị token màu; thấy nguyên văn chữ `@{...}` dạng text là sai.
-Mọi action tên `HTTP_*` = action **HTTP** built-in (Add an action → gõ "HTTP" → chọn action tên "HTTP"), điền Method + URI + Headers (+ Body với POST/PATCH). `@{REPO_API}` là ký hiệu viết tắt của tài liệu — trong ô URI phải dán expression ghép đầy đủ, ví dụ `HTTP_GetPR`:
-`concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '?api-version=7.1')`.
-Mọi HTTP action: header `Authorization` = `concat('Basic ', base64(concat(':', parameters('prv_ADO_PAT'))))`, retry policy mặc định.
-Viết tắt trong URI: `@{...}` đứng giữa URL = PR id (`triggerBody()['number']`); tiền tố `.../` = lặp lại phần URL của action HTTP ngay trước — luôn ghép lại thành concat đầy đủ theo mẫu `HTTP_GetPR` ở trên.
-Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure run after: has failed, has timed out) ở cuối.
-Ghi chú đọc spec: "Khối A/B/C" chỉ là tiêu đề tài liệu — **không phải** object trong designer. Container thật trong flow chỉ gồm: `Scope_Try`/`Scope_Catch` (action **Scope**, nhóm Control), các `Cond_*` (action **Condition**, action con nằm trong nhánh Yes/No), và `Apply_to_each_File` (action **Apply to each** — toàn bộ Khối B nằm bên trong nó). Khối A và C là action xếp nối tiếp bình thường trong Scope_Try.
-Quy ước Condition "gác cổng" (`Cond_Active`, `Cond_RulesExist`): nhánh **Yes để trống**, action kế tiếp đặt **sau** khối Condition (điều kiện đúng → flow rơi xuống chạy tiếp); nhánh **No** chứa đúng những gì ghi sau "**No** →" và kết thúc bằng **Terminate** (Status = Succeeded — kết cục hợp lệ, không phải lỗi). Riêng `Cond_Budget` là ngoại lệ: action 18–23 nằm trong nhánh Yes như spec ghi. Các `Reply_*` gated "nếu >0": pilot chạy tay luôn truyền TriggerThreadId=0 nên có thể bỏ qua, chỉ giữ Terminate — riêng `Reply_NoRules` là lỗi cấu hình (không phải kết cục hợp lệ): khi bỏ Reply, đặt Terminate **Status = Failed** kèm Message "Không đọc được review rules từ OneNote" để run history hiện rõ nguyên nhân thay vì Succeeded giả.
+Mỗi action bên dưới ghi: **loại action** (gõ vào ô tìm kiếm Add an action), tên
+rename, vị trí đặt, và từng ô điền gì. Ô đánh dấu **fx** = bấm nút fx (Insert
+expression), dán nguyên chuỗi, bấm OK — **không gõ `@{ }`**. Ô đánh dấu
+**text** = gõ/dán như văn bản thường. Rename action đúng tên **trước khi** dán
+expression (expression tham chiếu theo tên).
 
-## Khối A — fetch & validate
-1.  `Init_varSkipped` — Initialize variable, Array, `[]`
-2.  `Init_varFindings` — Initialize variable, Array, `[]`  (mỗi phần tử: finding JSON + field `fingerprint` đã tính)
-3.  `Init_varBudget` — Initialize variable, Integer, `@{parameters('prv_MAX_LINES')}`
-4.  `HTTP_GetPR` — GET `@{REPO_API}/pullRequests/@{triggerBody()['number']}?api-version=7.1`
-5.  `Cond_Active` — Condition: `@{body('HTTP_GetPR')?['status']}` equals `active`.
-    **No** → `Reply_NotActive` (POST comment vào TriggerThreadId nếu >0: "❌ PR không ở trạng thái active.") → Terminate (Succeeded).
-6.  `Compose_SourceBranch` — `@{replace(body('HTTP_GetPR')?['sourceRefName'],'refs/heads/','')}`
-7.  `Compose_TargetBranch` — `@{replace(body('HTTP_GetPR')?['targetRefName'],'refs/heads/','')}`
-8.  `GetRules_OneNote` — action **Get page content** (connector **OneNote (Business)**): chọn Notebook / Section / Page chứa review rules ngay trong designer (xem setup guide mục 0 bước 2; lần đầu thêm action sẽ yêu cầu đăng nhập tạo connection). Output: HTML của trang.
-    `HtmlToText_Rules` — action **Html to text** (Content Conversion): input = output của `GetRules_OneNote`.
-9.  `Cond_RulesExist` — Condition (Configure run after HtmlToText_Rules: succeeded **và** failed):
-    `@{greater(length(trim(coalesce(body('HtmlToText_Rules'), ''))), 50)}` equals `true` (trang rỗng/không đọc được coi như không có rule).
-    **No** → `Reply_NoRules` (POST comment vào TriggerThreadId nếu >0: "❌ Không đọc được review rules từ OneNote — kiểm tra trang rules và connection của flow.") → Terminate (Succeeded).
-10. `HTTP_GetIterations` — GET `@{REPO_API}/pullRequests/@{...}/iterations?api-version=7.1`
-    → `Compose_IterationId` = `@{last(body('HTTP_GetIterations')?['value'])?['id']}`
-11. `HTTP_GetChanges` — GET `.../iterations/@{outputs('Compose_IterationId')}/changes?$compareTo=0&api-version=7.1`
-12. `Filter_Files` — Filter array, From `@{body('HTTP_GetChanges')?['changeEntries']}`, điều kiện (Edit in advanced mode):
-    `@and(
-       not(contains(item()?['changeType'],'delete')),
-       not(equals(item()?['item']?['isFolder'], true)),
-       not(endswith(item()?['item']?['path'],'.min.js')),
-       not(endswith(item()?['item']?['path'],'.lock')),
-       not(endswith(item()?['item']?['path'],'-lock.json')),
-       not(endswith(item()?['item']?['path'],'.dll')),
-       not(endswith(item()?['item']?['path'],'.png')),
-       not(endswith(item()?['item']?['path'],'.jpg')),
-       not(endswith(item()?['item']?['path'],'.svg')),
-       not(startswith(item()?['item']?['path'],'/.review/')))`
-13. `Compose_Capped` — `@{take(body('Filter_Files'), parameters('prv_MAX_FILES'))}`
-14. `Cond_OverCap` — nếu `@{length(body('Filter_Files'))}` > `prv_MAX_FILES` → Append to varSkipped:
-    `@{concat('Vượt cap ', parameters('prv_MAX_FILES'), ' file — chỉ review ', parameters('prv_MAX_FILES'), '/', length(body('Filter_Files')), ' file.')}`
+Quy ước dùng lại nhiều lần:
 
-## Khối B — phân tích từng file (Apply_to_each_File, From `@{outputs('Compose_Capped')}`, concurrency = 1)
-15. `HTTP_GetAfter` — GET items (như action 8) với path `@{items(...)?['item']?['path']}`, version = SourceBranch.
-16. `Compose_Lines` — `@{split(body('HTTP_GetAfter')?['content'], decodeUriComponent('%0A'))}`
-17. `Cond_Budget` — Condition: `@{length(outputs('Compose_Lines'))}` ≤ `@{variables('varBudget')}`.
-    **No** → Append to varSkipped `@{concat(items(...)?['item']?['path'], ' (hết budget dòng)')}` → (bỏ qua phần còn lại của iteration — các action sau nằm trong nhánh Yes).
-    **Yes** →
-18. `Decrement_Budget` — Decrement varBudget by `@{length(outputs('Compose_Lines'))}`
-19. `Select_Numbered` — Select: From `@{range(0, length(outputs('Compose_Lines')))}`,
-    Map (text mode): `@{concat(add(item(),1), ': ', outputs('Compose_Lines')?[item()])}`
-    → `Compose_AfterNumbered` = `@{join(body('Select_Numbered'), decodeUriComponent('%0A'))}`
-20. `HTTP_GetBefore` — GET items với version = TargetBranch;
-    `Compose_Before` (run after succeeded+failed) = `@{if(equals(outputs('HTTP_GetBefore')?['statusCode'],200), body('HTTP_GetBefore')?['content'], '')}`
-21. `Prompt_Review` — action **Run a prompt** → "PR Code Review", map 4 inputs
-    (RulesMarkdown = `@{body('HtmlToText_Rules')}`, FilePath = path, BeforeContent, AfterNumbered).
-22. `Parse_Findings` — Parse JSON trên `@{outputs('Prompt_Review')?['body']?['responsev2']?['predictionOutput']?['text']}`
-    (đường dẫn output chính xác: dùng dynamic content "Text" của Run a prompt).
-    Schema: object `{findings: array of {file,line,type,ruleId,severity,message,suggestion,snippet}}` (mọi field string trừ line integer).
-    **Retry 1 lần:** `Prompt_Review_2` + `Parse_Findings_2` với Configure run after `Parse_Findings` **has failed**;
-    `Append_SkipParse` (run after Parse_Findings_2 failed): append vào varSkipped `@{concat(path, ' (JSON hỏng)')}`.
-23. `Apply_to_each_Finding` (Configure run after `Append_SkipParse`: is successful **và** is skipped) — From `@{coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))}`:
-    Append to varFindings object:
-    `@{addProperty(item(), 'fingerprint', toLower(concat(if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file'])), '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))}`
+- **AUTH** — mọi action HTTP đều có header `Authorization`, value (fx):
+  ```
+  concat('Basic ', base64(concat(':', parameters('prv_ADO_PAT'))))
+  ```
+  Action POST/PATCH thêm header thứ hai: `Content-Type` = `application/json` (text).
+- Trigger inputs: `PullRequestId` = `triggerBody()['number']`,
+  `TriggerThreadId` = `triggerBody()['number_1']` (hoặc chọn token từ Dynamic content).
+- Pilot chạy tay: `TriggerThreadId` luôn = 0 → các bước "Reply vào thread
+  trigger" được lược bỏ, thay bằng Terminate như ghi ở từng chỗ.
 
-## Khối C — đối chiếu thread cũ & post
-24. `HTTP_GetThreads` — GET `.../pullRequests/@{...}/threads?api-version=7.1`
-    - `Filter_BotThreads` — From `@{body('HTTP_GetThreads')?['value']}`, điều kiện:
-      `@and(not(equals(item()?['properties']?['prv.fingerprint'], null)), not(equals(item()?['isDeleted'], true)))`
-    - `Select_BotFp_All` — Map: `@{item()?['properties']?['prv.fingerprint']?['$value']}` → mảng fingerprint mọi thread bot (mọi status)
-    - `Filter_BotActive` — thêm điều kiện `equals(item()?['status'],'active')`.
-    - `Select_NewFp` — From varFindings, Map `@{item()?['fingerprint']}`.
-    - `Filter_UserResolved` — From `@{body('Filter_BotThreads')}`: `@and(not(equals(item()?['status'],'active')), contains(body('Select_NewFp'), item()?['properties']?['prv.fingerprint']?['$value']))` (thread đã đóng nhưng vi phạm vẫn còn trong findings hiện tại → user tự resolve).
-25. `Filter_NewFindings` — From `@{variables('varFindings')}`: `@not(contains(body('Select_BotFp_All'), item()?['fingerprint']))`
-    `Apply_to_each_New`: `HTTP_PostThread` — POST `.../threads?api-version=7.1`, body (đúng cấu trúc `New-PrInlineThread` trong scripts/ado-api.ps1):
-    comments[0].content =
-    `@{concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')}`
-    threadContext.filePath = `@{item()?['file']}` (đảm bảo bắt đầu '/': `@{if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))}`),
-    rightFileStart/End.line = `@{item()?['line']}`, properties prv.fingerprint/prv.rule như reference.
-26. `Filter_FixedThreads` — From `@{body('Filter_BotActive')}`: `@not(contains(body('Select_NewFp'), item()?['properties']?['prv.fingerprint']?['$value']))`
-    `Apply_to_each_Fixed`: `HTTP_ReplyFixed` — POST `.../threads/@{item()?['id']}/comments?api-version=7.1` `{"parentCommentId":1,"content":"✅ Đã fix — cảm ơn bạn!","commentType":1}` ; `HTTP_ResolveThread` — PATCH `.../threads/@{item()?['id']}?api-version=7.1` `{"status":"fixed"}`.
-27. Đếm cho summary (Compose):
-    `cntNew = length(body('Filter_NewFindings'))`, `cntFixed = length(body('Filter_FixedThreads'))`,
-    `cntRemaining = sub(length(body('Filter_BotActive')), cntFixed)`,
-    `cntUserResolved = length(body('Filter_UserResolved'))`.
-    `Compose_Summary` (markdown):
-    `## 🤖 PR Review Agent — kết quả`
-    `| Mới | Đã fix | Còn lại | User tự resolve |` + số liệu; danh sách varSkipped nếu không rỗng ("### File bỏ qua"); dòng cuối: nguồn rules = OneNote (trang đã chọn trong flow).
-    `Filter_SummaryThread` — From threads: `@not(equals(item()?['properties']?['prv.summary'], null))`.
-    Condition: rỗng → `HTTP_PostSummary` (POST thread, properties prv.summary, không threadContext); ngược lại → `HTTP_PatchSummary` — PATCH `.../threads/@{first(body('Filter_SummaryThread'))?['id']}/comments/1?api-version=7.1` `{"content": <Compose_Summary>}`.
-    Cuối: Condition `TriggerThreadId > 0` → `HTTP_ReplyTrigger` — POST reply:
-    `@{concat('✅ Review xong — ', cntNew, ' finding mới, ', cntFixed, ' đã fix, ', cntRemaining, ' còn lại. Xem summary comment.')}`
+## Trigger
 
-## Scope_Catch (run after Scope_Try failed/timed out)
-- Condition `TriggerThreadId > 0` → POST reply `"❌ Review thất bại — thử lại sau hoặc báo admin. (run: @{workflow()?['run']?['name']})"`.
+**Manually trigger a flow** — thêm 2 input:
+- **Number** tên `PullRequestId`
+- **Number** tên `TriggerThreadId`
+
+## Biến (đặt NGOÀI Scope_Try — Initialize variable không được phép nằm trong Scope)
+
+**1. `Init_varSkipped`** — loại **Initialize variable**
+- Name: `varSkipped` · Type: `Array` · Value: *(để trống)*
+
+**2. `Init_varFindings`** — loại **Initialize variable**
+- Name: `varFindings` · Type: `Array` · Value: *(để trống)*
+
+**3. `Init_varBudget`** — loại **Initialize variable**
+- Name: `varBudget` · Type: `Integer` · Value (fx): `parameters('prv_MAX_LINES')`
+
+## `Scope_Try` — loại **Scope** (nhóm Control), chứa toàn bộ action 4→27
+
+### Khối A — fetch & validate (action xếp nối tiếp trong Scope_Try)
+
+**4. `HTTP_GetPR`** — loại **HTTP**
+- Method: `GET`
+- URI (fx):
+  ```
+  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '?api-version=7.1')
+  ```
+- Headers: AUTH
+
+**5. `Cond_Active`** — loại **Condition**
+- Ô trái (fx): `body('HTTP_GetPR')?['status']` · toán tử **is equal to** · ô phải (text): `active`
+- Nhánh **Yes: để trống** (action 6 trở đi đặt SAU khối Condition này)
+- Nhánh **No**: 1 action **Terminate** — Status: `Succeeded`
+  *(PR đã đóng = kết cục hợp lệ. Bản đầy đủ cho auto-trigger sau này: thêm
+  Condition `TriggerThreadId > 0` → HTTP POST reply trước Terminate.)*
+
+**6. `Compose_SourceBranch`** — loại **Compose**
+- Inputs (fx): `replace(body('HTTP_GetPR')?['sourceRefName'], 'refs/heads/', '')`
+
+**7. `Compose_TargetBranch`** — loại **Compose**
+- Inputs (fx): `replace(body('HTTP_GetPR')?['targetRefName'], 'refs/heads/', '')`
+
+**8a. `GetRules_OneNote`** — loại **Get page content** (connector **OneNote (Business)**)
+- Lần đầu sẽ yêu cầu Sign in tạo connection
+- Chọn Notebook / Section / Page chứa review rules bằng dropdown (trang đã
+  chuẩn bị ở setup guide mục 0 bước 2)
+
+**8b. `HtmlToText_Rules`** — loại **Html to text** (connector **Content Conversion**)
+- Ô Content: chọn token output của `GetRules_OneNote` từ Dynamic content
+  (hoặc fx: `body('GetRules_OneNote')`)
+
+**9. `Cond_RulesExist`** — loại **Condition**
+- **Configure run after** (⋯ trên action): tick cả **is successful** và **has failed** (của `HtmlToText_Rules`)
+- Ô trái (fx): `greater(length(trim(coalesce(body('HtmlToText_Rules'), ''))), 50)` · **is equal to** · ô phải (fx): `true`
+- Nhánh **Yes: để trống**
+- Nhánh **No**: 1 action **Terminate** — Status: `Failed` · Message (text):
+  `Không đọc được review rules từ OneNote — kiểm tra trang rules và connection của flow`
+  *(Lỗi cấu hình → Failed để run history hiện rõ nguyên nhân.)*
+
+**10a. `HTTP_GetIterations`** — loại **HTTP**
+- Method: `GET`
+- URI (fx):
+  ```
+  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/iterations?api-version=7.1')
+  ```
+- Headers: AUTH
+
+**10b. `Compose_IterationId`** — loại **Compose**
+- Inputs (fx): `last(body('HTTP_GetIterations')?['value'])?['id']`
+
+**11. `HTTP_GetChanges`** — loại **HTTP**
+- Method: `GET`
+- URI (fx):
+  ```
+  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/iterations/', outputs('Compose_IterationId'), '/changes?$compareTo=0&api-version=7.1')
+  ```
+- Headers: AUTH
+
+**12. `Filter_Files`** — loại **Filter array** (Data Operation)
+- From (fx): `body('HTTP_GetChanges')?['changeEntries']`
+- Điều kiện: bấm **Edit in advanced mode**, dán nguyên (GIỮ dấu `@` đầu — riêng advanced mode dùng cú pháp này):
+  ```
+  @and(not(contains(item()?['changeType'],'delete')), not(equals(item()?['item']?['isFolder'], true)), not(endswith(item()?['item']?['path'],'.min.js')), not(endswith(item()?['item']?['path'],'.lock')), not(endswith(item()?['item']?['path'],'-lock.json')), not(endswith(item()?['item']?['path'],'.dll')), not(endswith(item()?['item']?['path'],'.png')), not(endswith(item()?['item']?['path'],'.jpg')), not(endswith(item()?['item']?['path'],'.svg')), not(startswith(item()?['item']?['path'],'/.review/')))
+  ```
+
+**13. `Compose_Capped`** — loại **Compose**
+- Inputs (fx): `take(body('Filter_Files'), parameters('prv_MAX_FILES'))`
+
+**14. `Cond_OverCap`** — loại **Condition**
+- Ô trái (fx): `length(body('Filter_Files'))` · **is greater than** · ô phải (fx): `parameters('prv_MAX_FILES')`
+- Nhánh **Yes**: 1 action **Append to array variable** — Name: `varSkipped` · Value (fx):
+  ```
+  concat('Vượt cap ', parameters('prv_MAX_FILES'), ' file — chỉ review ', parameters('prv_MAX_FILES'), '/', length(body('Filter_Files')), ' file.')
+  ```
+- Nhánh **No: để trống**. Flow tiếp tục sau khối Condition dù Yes hay No.
+
+### Khối B — `Apply_to_each_File` — loại **Apply to each** (Control)
+
+- Select an output (fx): `outputs('Compose_Capped')`
+- **Settings** của action (⋯ → Settings): bật **Concurrency control**, Degree of parallelism = **1**
+- Action 15→23 nằm **bên trong** vòng lặp này:
+
+**15. `HTTP_GetAfter`** — loại **HTTP**
+- Method: `GET`
+- URI (fx):
+  ```
+  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/items?path=', encodeUriComponent(items('Apply_to_each_File')?['item']?['path']), '&versionDescriptor.version=', encodeUriComponent(outputs('Compose_SourceBranch')), '&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1')
+  ```
+- Headers: AUTH
+
+**16. `Compose_Lines`** — loại **Compose**
+- Inputs (fx): `split(body('HTTP_GetAfter')?['content'], decodeUriComponent('%0A'))`
+
+**17. `Cond_Budget`** — loại **Condition**
+- Ô trái (fx): `length(outputs('Compose_Lines'))` · **is less than or equal to** · ô phải (fx): `variables('varBudget')`
+- Nhánh **No**: 1 action **Append to array variable** — Name: `varSkipped` · Value (fx):
+  ```
+  concat(items('Apply_to_each_File')?['item']?['path'], ' (hết budget dòng)')
+  ```
+- Nhánh **Yes**: chứa toàn bộ action 18→23 bên dưới.
+
+**18. `Decrement_Budget`** — loại **Decrement variable**
+- Name: `varBudget` · Value (fx): `length(outputs('Compose_Lines'))`
+
+**19a. `Select_Numbered`** — loại **Select** (Data Operation)
+- From (fx): `range(0, length(outputs('Compose_Lines')))`
+- Map: bấm icon chuyển **text mode** (icon nhỏ bên phải ô Map) → (fx):
+  ```
+  concat(add(item(), 1), ': ', outputs('Compose_Lines')?[item()])
+  ```
+
+**19b. `Compose_AfterNumbered`** — loại **Compose**
+- Inputs (fx): `join(body('Select_Numbered'), decodeUriComponent('%0A'))`
+
+**20a. `HTTP_GetBefore`** — loại **HTTP**
+- Method: `GET`
+- URI (fx): giống `HTTP_GetAfter` nhưng version = TargetBranch:
+  ```
+  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/items?path=', encodeUriComponent(items('Apply_to_each_File')?['item']?['path']), '&versionDescriptor.version=', encodeUriComponent(outputs('Compose_TargetBranch')), '&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1')
+  ```
+- Headers: AUTH
+
+**20b. `Compose_Before`** — loại **Compose**
+- **Configure run after**: tick cả **is successful** và **has failed** (file mới → GetBefore 404)
+- Inputs (fx):
+  ```
+  if(equals(outputs('HTTP_GetBefore')?['statusCode'], 200), body('HTTP_GetBefore')?['content'], '')
+  ```
+
+**21. `Prompt_Review`** — loại **Run a prompt** (AI Builder)
+- Prompt: chọn **PR Code Review** (hoặc tạo mới tại đây — setup guide mục 2 Cách B)
+- Map 4 input:
+  - `RulesMarkdown` (fx): `body('HtmlToText_Rules')`
+  - `FilePath` (fx): `items('Apply_to_each_File')?['item']?['path']`
+  - `BeforeContent` (fx): `outputs('Compose_Before')`
+  - `AfterNumbered` (fx): `outputs('Compose_AfterNumbered')`
+
+**22a. `Parse_Findings`** — loại **Parse JSON** (Data Operation)
+- Content: chọn token **Text** của `Prompt_Review` từ Dynamic content
+  (nếu gõ fx: `outputs('Prompt_Review')?['body']?['responsev2']?['predictionOutput']?['text']`)
+- Schema (dán nguyên vào ô Schema):
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "file": { "type": "string" },
+            "line": { "type": "integer" },
+            "type": { "type": "string" },
+            "ruleId": { "type": "string" },
+            "severity": { "type": "string" },
+            "message": { "type": "string" },
+            "suggestion": { "type": "string" },
+            "snippet": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+  ```
+
+**22b. `Prompt_Review_2`** — loại **Run a prompt** — cấu hình y hệt action 21
+- **Configure run after**: chỉ tick **has failed** (của `Parse_Findings`) — đây là lần retry khi JSON hỏng
+
+**22c. `Parse_Findings_2`** — loại **Parse JSON** — Schema y hệt 22a
+- Content: token Text của `Prompt_Review_2`
+
+**22d. `Append_SkipParse`** — loại **Append to array variable**
+- **Configure run after**: chỉ tick **has failed** (của `Parse_Findings_2`)
+- Name: `varSkipped` · Value (fx):
+  ```
+  concat(items('Apply_to_each_File')?['item']?['path'], ' (JSON hỏng)')
+  ```
+
+**23. `Apply_to_each_Finding`** — loại **Apply to each**
+- **Configure run after**: tick **is successful** VÀ **is skipped** (của `Append_SkipParse`) — thiếu bước này thì nhánh thành công sẽ bị skip toàn bộ findings
+- Select an output (fx): `coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))`
+- Bên trong: 1 action **Append to array variable** — Name: `varFindings` · Value (fx):
+  ```
+  addProperty(item(), 'fingerprint', toLower(concat(if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file'])), '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))
+  ```
+
+*(hết vòng lặp Apply_to_each_File — action 24 trở đi đặt SAU nó, vẫn trong Scope_Try)*
+
+### Khối C — đối chiếu thread cũ & post (action nối tiếp trong Scope_Try)
+
+**24a. `HTTP_GetThreads`** — loại **HTTP**
+- Method: `GET`
+- URI (fx):
+  ```
+  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
+  ```
+- Headers: AUTH
+
+**24b. `Filter_BotThreads`** — loại **Filter array**
+- From (fx): `body('HTTP_GetThreads')?['value']`
+- Advanced mode (giữ `@`):
+  ```
+  @and(not(equals(item()?['properties']?['prv.fingerprint'], null)), not(equals(item()?['isDeleted'], true)))
+  ```
+
+**24c. `Select_BotFp_All`** — loại **Select**
+- From (fx): `body('Filter_BotThreads')`
+- Map (text mode, fx): `item()?['properties']?['prv.fingerprint']?['$value']`
+
+**24d. `Filter_BotActive`** — loại **Filter array**
+- From (fx): `body('Filter_BotThreads')`
+- Advanced mode: `@equals(item()?['status'], 'active')`
+
+**24e. `Select_NewFp`** — loại **Select**
+- From (fx): `variables('varFindings')`
+- Map (text mode, fx): `item()?['fingerprint']`
+
+**24f. `Filter_UserResolved`** — loại **Filter array**
+- From (fx): `body('Filter_BotThreads')`
+- Advanced mode:
+  ```
+  @and(not(equals(item()?['status'],'active')), contains(body('Select_NewFp'), item()?['properties']?['prv.fingerprint']?['$value']))
+  ```
+
+**25a. `Filter_NewFindings`** — loại **Filter array**
+- From (fx): `variables('varFindings')`
+- Advanced mode: `@not(contains(body('Select_BotFp_All'), item()?['fingerprint']))`
+
+**25b. `Apply_to_each_New`** — loại **Apply to each**
+- Select an output (fx): `body('Filter_NewFindings')`
+- Bên trong: **`HTTP_PostThread`** — loại **HTTP**
+  - Method: `POST`
+  - URI (fx):
+    ```
+    concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
+    ```
+  - Headers: AUTH + `Content-Type` = `application/json`
+  - Body: dán khung JSON sau như text, rồi tại 5 vị trí ❶–❺ xoá ký hiệu và chèn expression bằng fx:
+    ```json
+    {
+      "comments": [ { "parentCommentId": 0, "content": "❶", "commentType": 1 } ],
+      "status": 1,
+      "threadContext": {
+        "filePath": "❷",
+        "rightFileStart": { "line": ❸, "offset": 1 },
+        "rightFileEnd": { "line": ❸, "offset": 1 }
+      },
+      "properties": {
+        "prv.fingerprint": { "$type": "System.String", "$value": "❹" },
+        "prv.rule": { "$type": "System.String", "$value": "❺" }
+      }
+    }
+    ```
+    - ❶ (fx — chèn GIỮA 2 dấu nháy kép):
+      ```
+      concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')
+      ```
+    - ❷ (fx, giữa nháy kép): `if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))`
+    - ❸ (fx, XOÁ luôn ký hiệu — số không có nháy, chèn ở cả 2 chỗ): `item()?['line']`
+    - ❹ (fx, giữa nháy kép): `item()?['fingerprint']`
+    - ❺ (fx, giữa nháy kép): `coalesce(item()?['ruleId'], '')`
+
+**26a. `Filter_FixedThreads`** — loại **Filter array**
+- From (fx): `body('Filter_BotActive')`
+- Advanced mode:
+  ```
+  @not(contains(body('Select_NewFp'), item()?['properties']?['prv.fingerprint']?['$value']))
+  ```
+
+**26b. `Apply_to_each_Fixed`** — loại **Apply to each**
+- Select an output (fx): `body('Filter_FixedThreads')`
+- Bên trong, 2 action nối tiếp:
+  - **`HTTP_ReplyFixed`** — loại **HTTP** — Method `POST` · Headers AUTH + Content-Type
+    - URI (fx):
+      ```
+      concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', items('Apply_to_each_Fixed')?['id'], '/comments?api-version=7.1')
+      ```
+    - Body (text, dán nguyên): `{ "parentCommentId": 1, "content": "✅ Đã fix — cảm ơn bạn!", "commentType": 1 }`
+  - **`HTTP_ResolveThread`** — loại **HTTP** — Method `PATCH` · Headers AUTH + Content-Type
+    - URI (fx):
+      ```
+      concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', items('Apply_to_each_Fixed')?['id'], '?api-version=7.1')
+      ```
+    - Body (text): `{ "status": "fixed" }`
+
+**27a. `Compose_Summary`** — loại **Compose**
+- Inputs (fx, dán nguyên — tự tính đủ 4 số liệu + danh sách file bỏ qua):
+  ```
+  concat('## 🤖 PR Review Agent — kết quả', decodeUriComponent('%0A%0A'), '| Mới | Đã fix | Còn lại | User tự resolve |', decodeUriComponent('%0A'), '|---|---|---|---|', decodeUriComponent('%0A'), '| ', length(body('Filter_NewFindings')), ' | ', length(body('Filter_FixedThreads')), ' | ', sub(length(body('Filter_BotActive')), length(body('Filter_FixedThreads'))), ' | ', length(body('Filter_UserResolved')), ' |', decodeUriComponent('%0A%0A'), if(equals(length(variables('varSkipped')), 0), '', concat('### File bỏ qua', decodeUriComponent('%0A'), join(variables('varSkipped'), decodeUriComponent('%0A')), decodeUriComponent('%0A%0A'))), '_Nguồn rules: OneNote (trang đã chọn trong flow)._')
+  ```
+
+**27b. `Filter_SummaryThread`** — loại **Filter array**
+- From (fx): `body('HTTP_GetThreads')?['value']`
+- Advanced mode: `@not(equals(item()?['properties']?['prv.summary'], null))`
+
+**27c. `Cond_SummaryExists`** — loại **Condition**
+- Ô trái (fx): `length(body('Filter_SummaryThread'))` · **is equal to** · ô phải (text): `0`
+- Nhánh **Yes** (chưa có summary → tạo mới): **`HTTP_PostSummary`** — loại **HTTP** — Method `POST` · Headers AUTH + Content-Type
+  - URI (fx): giống URI của `HTTP_PostThread` (`.../threads?api-version=7.1`)
+  - Body: dán khung, chèn ❶ = fx `outputs('Compose_Summary')` giữa nháy kép:
+    ```json
+    {
+      "comments": [ { "parentCommentId": 0, "content": "❶", "commentType": 1 } ],
+      "status": 1,
+      "properties": { "prv.summary": { "$type": "System.String", "$value": "true" } }
+    }
+    ```
+- Nhánh **No** (đã có → update): **`HTTP_PatchSummary`** — loại **HTTP** — Method `PATCH` · Headers AUTH + Content-Type
+  - URI (fx):
+    ```
+    concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', first(body('Filter_SummaryThread'))?['id'], '/comments/1?api-version=7.1')
+    ```
+  - Body: `{ "content": "❶" }` với ❶ = fx `outputs('Compose_Summary')` (giữa nháy kép)
+
+**27d. Reply thread trigger** — *(pilot chạy tay: BỎ QUA — TriggerThreadId luôn 0)*
+Bản đầy đủ: Condition `TriggerThreadId > 0` → HTTP POST `.../threads/{TriggerThreadId}/comments?api-version=7.1` với content = "✅ Review xong — … finding mới, … đã fix, … còn lại."
+
+## `Scope_Catch` — loại **Scope**, đặt NGOÀI và SAU `Scope_Try`
+
+- **Configure run after** (của `Scope_Try`): bỏ tick "is successful", tick **has failed** + **has timed out**
+- Bên trong (pilot): 1 action **Terminate** — Status: `Failed` · Message (text):
+  `Review thất bại giữa chừng — mở run history xem action đỏ trong Scope_Try`
+- Bản đầy đủ cho auto-trigger: Condition `TriggerThreadId > 0` → HTTP POST reply "❌ Review thất bại" vào thread trigger.
+
+## Checklist sau khi build xong
+
+1. Đủ 3 Init variable **ngoài** Scope_Try; action 4→27 **trong** Scope_Try; Scope_Catch ngoài.
+2. Các chỗ Configure run after: `Cond_RulesExist` (9), `Compose_Before` (20b), `Prompt_Review_2` (22b), `Append_SkipParse` (22d), `Apply_to_each_Finding` (23), `Scope_Catch`.
+3. `Apply_to_each_File` bật Concurrency = 1.
+4. Test → Manually: `PullRequestId` = Golden PR id, `TriggerThreadId` = 0 → xem setup guide mục 5.
