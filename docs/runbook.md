@@ -1,11 +1,12 @@
 # Runbook — PR Review Agent
 
 ## Rotate PAT (mỗi 90 ngày — đặt reminder lịch!)
-1. Đăng nhập svc-pr-review → tạo PAT mới (Code Read & Write, 90 ngày).
-2. Power Apps → solution PR Review Agent → env var `prv_ADO_PAT` → cập nhật giá trị secret.
-3. Chạy `scripts/test-ado-access.ps1` với PAT mới → 2 PASS.
-4. Chạy tay flow **PR Review Pipeline** với 1 PR test (setup guide mục 3) →
+1. Đăng nhập account bot (svc-pr-review, hoặc account cá nhân nếu pilot dùng
+   PAT cá nhân — xem setup guide mục 0) → tạo PAT mới (Code Read & Write, 90 ngày).
+2. Power Apps → solution PR Review Agent → env var `prv_ADO_PAT` → cập nhật giá trị.
+3. Chạy tay flow **PR Review Pipeline** với 1 PR test (setup guide mục 3) →
    run Succeeded, có comment trên PR → revoke PAT cũ.
+   (Tuỳ chọn: `scripts/test-ado-access.ps1` kiểm tra PAT nhanh nếu máy có PowerShell.)
 
 ## Theo dõi chi phí (việc bắt buộc trong pilot — spec §8)
 - Copilot Studio admin center → Capacity/Consumption: xem messages tiêu thụ theo agent.

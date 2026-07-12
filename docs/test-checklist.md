@@ -30,11 +30,11 @@ Golden PR id: `<điền sau khi tạo>` · Branch: `test/golden-review` · File:
 **Mục đích:** Xác nhận hệ thống reply "✅ Đã fix" khi user fix các code issue được bot phát hiện.
 
 **Các bước:**
-- Trong clone pilot repo, checkout branch `test/golden-review`
-- Sửa file `src/Demo/OrderService.cs`:
+- Trên web UI Azure DevOps: Repos → Files → chọn branch `test/golden-review`
+  → mở `src/Demo/OrderService.cs` → **Edit**:
   - Fix finding #2 (NAMING-01): đổi `GetOrder` → `GetOrderAsync`
   - Fix finding #4 (LOG-01): thay `Console.WriteLine(...)` bằng `_logger.LogInformation("order loaded {Id}", id);`
-- Commit + push code
+- **Commit** (web editor commit thẳng vào branch)
 - Chạy tay flow **PR Review Pipeline** với `PullRequestId` = Golden PR id
   (setup guide mục 3)
 
@@ -56,9 +56,13 @@ Golden PR id: `<điền sau khi tạo>` · Branch: `test/golden-review` · File:
 - Không có thread mới trùng finding đó
 - Summary ghi nhận "User tự resolve = 1"
 
-### 3. Kịch bản PR lớn vượt cấp
+### 3. Kịch bản PR lớn vượt cấp *(cần git local — tuỳ chọn)*
 
 **Mục đích:** Xác nhận hệ thống giới hạn review 30 file tối đa và báo cáo chính xác "File bỏ qua".
+
+Kịch bản này sinh 35 file nên cần git local (tạo 35 file bằng web UI quá tốn
+công). Nếu chỉ làm việc trên web UI, có thể hoãn kịch bản này — cap vẫn được
+pipeline thực thi, chỉ là chưa được kiểm chứng.
 
 **Các bước:**
 Tạo branch/PR test với 35 file thay đổi:

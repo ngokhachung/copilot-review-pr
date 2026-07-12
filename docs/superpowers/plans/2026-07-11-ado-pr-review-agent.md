@@ -26,6 +26,11 @@
 
 ## Ghi chú thực thi
 
+> **Amendment 2026-07-12:** các bước manual dùng script local (Task 1 Step
+> 5–6, Task 2 Step 2–3, Task 3 Step 2–3, Task 5 Step 3–4) được thay bằng thao
+> tác web UI theo `docs/setup-guide.md` mục 0 — scripts trong `scripts/` hạ
+> xuống thành công cụ debug tuỳ chọn. Task 8 bị thay thế (xem note tại Task 8).
+
 - Task 1–5 là repo artifact + script — agent thực thi được (Task 1, 3, 5 có bước manual của user: tạo service account, push file lên repo pilot).
 - Task 6–10 chủ yếu thao tác UI trên Power Platform / Azure DevOps — user tự làm theo flow spec trong plan, mỗi task có bước verify cụ thể.
 - Repo pilot Azure DevOps gọi là **pilot repo**; repo local này (`copilot-review-pr`) chứa docs/scripts/templates.
