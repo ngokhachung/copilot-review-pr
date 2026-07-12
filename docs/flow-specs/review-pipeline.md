@@ -2,6 +2,7 @@
 
 Trigger: **Manually trigger a flow** — inputs: `PullRequestId` (Number), `TriggerThreadId` (Number).
 Quy ước: `REPO_API = concat(env prv_ADO_ORG_URL, '/', prv_ADO_PROJECT, '/_apis/git/repositories/', prv_ADO_REPO_ID)`.
+Cách nhập expression: `@{...}` trong spec chỉ là ký hiệu đánh dấu "đây là expression" — khi nhập vào designer, bấm nút **fx** (Insert expression) và dán phần **bên trong** `@{...}`, **không gõ ký tự `@{` `}`**. Nhập đúng thì ô hiển thị token màu; thấy nguyên văn chữ `@{...}` dạng text là sai.
 Mọi action tên `HTTP_*` = action **HTTP** built-in (Add an action → gõ "HTTP" → chọn action tên "HTTP"), điền Method + URI + Headers (+ Body với POST/PATCH). `@{REPO_API}` là ký hiệu viết tắt của tài liệu — trong ô URI phải dán expression ghép đầy đủ, ví dụ `HTTP_GetPR`:
 `concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '?api-version=7.1')`.
 Mọi HTTP action: header `Authorization` = `concat('Basic ', base64(concat(':', parameters('prv_ADO_PAT'))))`, retry policy mặc định.
