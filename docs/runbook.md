@@ -21,6 +21,12 @@
   Pipeline** xem action nào fail. Lỗi 401 từ ADO API = PAT hết hạn → rotate.
   (Hệ thống không có trigger tự động — amendment 2026-07-12 — nên không có
   service hook/trigger flow để kiểm tra.)
+- Pipeline dừng sớm với comment "Không đọc được review rules từ OneNote"
+  (hoặc dừng ở `Cond_RulesExist` trong run history): kiểm tra connection
+  OneNote của flow còn hiệu lực, trang rules chưa bị xoá/di chuyển, nội dung
+  trang không rỗng (setup guide mục 0 bước 2). Lưu ý: sửa trang rules có hiệu
+  lực ngay lần chạy sau — rule không version cùng code (hạn chế đã biết,
+  amendment 2026-07-12b).
 - Comment sai dòng/"outdated": kiểm tra iteration mới nhất; nếu lặp lại, thêm
   pullRequestThreadContext.iterationContext vào HTTP_PostThread (xem flow spec).
 - Vi phạm tái xuất hiện sau khi bot đã tự resolve ở lần chạy trước: thread cũ không được mở lại (nguyên tắc never-reopen) và lần chạy mới đếm nó vào "User tự resolve" trong summary — hạn chế đã biết của pilot. Xử lý: dev mở lại thread thủ công nếu muốn track tiếp.

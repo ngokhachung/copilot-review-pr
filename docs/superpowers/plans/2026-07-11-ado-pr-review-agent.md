@@ -30,6 +30,10 @@
 > 5–6, Task 2 Step 2–3, Task 3 Step 2–3, Task 5 Step 3–4) được thay bằng thao
 > tác web UI theo `docs/setup-guide.md` mục 0 — scripts trong `scripts/` hạ
 > xuống thành công cụ debug tuỳ chọn. Task 8 bị thay thế (xem note tại Task 8).
+> **Amendment 2026-07-12b:** nguồn rule chuyển từ `.review/rules.md` trong
+> repo sang trang OneNote (Task 3 Step 2–3 không còn áp dụng; flow spec action
+> 8–9 đổi sang connector OneNote (Business) + Html to text; bỏ env var
+> `prv_RULES_PATH`).
 
 - Task 1–5 là repo artifact + script — agent thực thi được (Task 1, 3, 5 có bước manual của user: tạo service account, push file lên repo pilot).
 - Task 6–10 chủ yếu thao tác UI trên Power Platform / Azure DevOps — user tự làm theo flow spec trong plan, mỗi task có bước verify cụ thể.
@@ -607,10 +611,11 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     **No** → `Reply_NotActive` (POST comment vào TriggerThreadId nếu >0: "❌ PR không ở trạng thái active.") → Terminate (Succeeded).
 6.  `Compose_SourceBranch` — `@{replace(body('HTTP_GetPR')?['sourceRefName'],'refs/heads/','')}`
 7.  `Compose_TargetBranch` — `@{replace(body('HTTP_GetPR')?['targetRefName'],'refs/heads/','')}`
-8.  `HTTP_GetRules` — GET `@{REPO_API}/items?path=@{encodeUriComponent(parameters('prv_RULES_PATH'))}&versionDescriptor.version=@{encodeUriComponent(outputs('Compose_TargetBranch'))}&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1`
-9.  `Cond_RulesExist` — Condition (Configure run after HTTP_GetRules: succeeded **và** failed):
-    `@{outputs('HTTP_GetRules')?['statusCode']}` equals `200`.
-    **No** → `Reply_NoRules` (POST comment vào TriggerThreadId nếu >0: "❌ Repo chưa có `.review/rules.md` trên target branch — tạo file theo template rồi gọi /review lại.") → Terminate (Succeeded).
+8.  `GetRules_OneNote` — action **Get page content** (connector **OneNote (Business)**): chọn Notebook / Section / Page chứa review rules ngay trong designer (xem setup guide mục 0 bước 2; lần đầu thêm action sẽ yêu cầu đăng nhập tạo connection). Output: HTML của trang.
+    `HtmlToText_Rules` — action **Html to text** (Content Conversion): input = output của `GetRules_OneNote`.
+9.  `Cond_RulesExist` — Condition (Configure run after HtmlToText_Rules: succeeded **và** failed):
+    `@{greater(length(trim(coalesce(body('HtmlToText_Rules'), ''))), 50)}` equals `true` (trang rỗng/không đọc được coi như không có rule).
+    **No** → `Reply_NoRules` (POST comment vào TriggerThreadId nếu >0: "❌ Không đọc được review rules từ OneNote — kiểm tra trang rules và connection của flow.") → Terminate (Succeeded).
 10. `HTTP_GetIterations` — GET `@{REPO_API}/pullRequests/@{...}/iterations?api-version=7.1`
     → `Compose_IterationId` = `@{last(body('HTTP_GetIterations')?['value'])?['id']}`
 11. `HTTP_GetChanges` — GET `.../iterations/@{outputs('Compose_IterationId')}/changes?$compareTo=0&api-version=7.1`
@@ -643,7 +648,7 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
 20. `HTTP_GetBefore` — GET items với version = TargetBranch;
     `Compose_Before` (run after succeeded+failed) = `@{if(equals(outputs('HTTP_GetBefore')?['statusCode'],200), body('HTTP_GetBefore')?['content'], '')}`
 21. `Prompt_Review` — action **Run a prompt** → "PR Code Review", map 4 inputs
-    (RulesMarkdown = `@{body('HTTP_GetRules')?['content']}`, FilePath = path, BeforeContent, AfterNumbered).
+    (RulesMarkdown = `@{body('HtmlToText_Rules')}`, FilePath = path, BeforeContent, AfterNumbered).
 22. `Parse_Findings` — Parse JSON trên `@{outputs('Prompt_Review')?['body']?['responsev2']?['predictionOutput']?['text']}`
     (đường dẫn output chính xác: dùng dynamic content "Text" của Run a prompt).
     Schema: object `{findings: array of {file,line,type,ruleId,severity,message,suggestion,snippet}}` (mọi field string trừ line integer).
@@ -675,7 +680,7 @@ Toàn bộ action 2→27 nằm trong **Scope_Try**; **Scope_Catch** (Configure r
     `cntUserResolved = length(body('Filter_UserResolved'))`.
     `Compose_Summary` (markdown):
     `## 🤖 PR Review Agent — kết quả`
-    `| Mới | Đã fix | Còn lại | User tự resolve |` + số liệu; danh sách varSkipped nếu không rỗng ("### File bỏ qua"); dòng cuối: rules version = `@{outputs('Compose_TargetBranch')}`.
+    `| Mới | Đã fix | Còn lại | User tự resolve |` + số liệu; danh sách varSkipped nếu không rỗng ("### File bỏ qua"); dòng cuối: nguồn rules = OneNote (trang đã chọn trong flow).
     `Filter_SummaryThread` — From threads: `@not(equals(item()?['properties']?['prv.summary'], null))`.
     Condition: rỗng → `HTTP_PostSummary` (POST thread, properties prv.summary, không threadContext); ngược lại → `HTTP_PatchSummary` — PATCH `.../threads/@{first(body('Filter_SummaryThread'))?['id']}/comments/1?api-version=7.1` `{"content": <Compose_Summary>}`.
     Cuối: Condition `TriggerThreadId > 0` → `HTTP_ReplyTrigger` — POST reply:

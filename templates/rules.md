@@ -1,7 +1,8 @@
 # Code Review Rules
 
 > Format bắt buộc: mỗi rule có ID duy nhất, mức độ, mô tả, ví dụ sai/đúng.
-> AI review agent đọc file này từ target branch để review PR.
+> Dán nội dung file này vào trang OneNote rules của team (xem setup guide
+> mục 0 bước 2) — AI review agent đọc rule từ trang đó khi review PR.
 
 ## NAMING-01 — Async method phải có hậu tố `Async` (severity: warning)
 Phương thức trả về `Task`/`Task<T>` phải đặt tên kết thúc bằng `Async`.

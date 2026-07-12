@@ -10,6 +10,13 @@
 > (nhập số cuối URL PR). Pipeline giữ nguyên. Các mục §1–§4, §6, §7, §11 đã
 > được cập nhật; xem §4 "Hướng mở rộng trigger" cho đường quay lại trigger
 > tự động sau này.
+>
+> **Amendment 2026-07-12b:** nguồn rule chuyển từ file `.review/rules.md`
+> trong repo sang **trang OneNote** (connector OneNote (Business) → "Get page
+> content" → "Html to text"). Đánh đổi: rule không còn version cùng code và
+> không còn tính "PR không tự sửa được rule" của thiết kế target-branch — ai
+> có quyền notebook đều sửa được rule; chấp nhận cho pilot. `templates/rules.md`
+> giữ vai trò nội dung mẫu để dán vào OneNote.
 
 ## 1. Mục tiêu
 
@@ -19,8 +26,8 @@ riêng của project, chạy trên nền Microsoft Copilot Studio.
 - Review theo yêu cầu: người vận hành chạy tay flow **PR Review Pipeline**
   với PR id (amendment 2026-07-12 — thay cho comment `/review` vì thiếu quyền
   service hook).
-- Agent đọc bộ rule sống trong repo, phân tích diff, post inline comment đúng
-  file/dòng kèm 1 comment tổng kết.
+- Agent đọc bộ rule từ trang OneNote của team (amendment 2026-07-12b), phân
+  tích diff, post inline comment đúng file/dòng kèm 1 comment tổng kết.
 - Khi dev fix xong, chạy lại pipeline với cùng PR id — agent đối chiếu và tự
   resolve các thread đã fix.
 
@@ -39,7 +46,7 @@ riêng của project, chạy trên nền Microsoft Copilot Studio.
 | Hạng mục | Quyết định |
 |---|---|
 | Trigger | Run tay flow PR Review Pipeline với PR id *(amendment 2026-07-12; thiết kế gốc: comment `/review` qua service hook — cần quyền admin, xem §4)* |
-| Nguồn rule | File markdown trong repo: `.review/rules.md`, đọc từ **target branch** |
+| Nguồn rule | Trang OneNote của team (connector OneNote (Business)) *(amendment 2026-07-12b; thiết kế gốc: `.review/rules.md` đọc từ target branch)* |
 | Output | Inline comment thread đúng file/dòng + 1 summary comment |
 | Phạm vi review | Vi phạm convention/rule + bug/logic rõ ràng; finding gắn nhãn `rule` hoặc `bug` |
 | Re-check | Full re-review qua `/review`; bot resolve thread đã fix (không có `/recheck` per-thread) |
@@ -125,8 +132,10 @@ Pipeline không cần sửa — chỉ cần thêm 1 flow trigger gọi nó như 
 
 1. **Metadata PR**: GET pull request → trạng thái, source/target branch,
    iteration mới nhất (`iterationId` cần cho việc gắn inline comment).
-2. **Rules**: GET `.review/rules.md` từ **target branch** (PR không thể tự sửa
-   rule để pass). Không có file → bot reply hướng dẫn tạo, dừng.
+2. **Rules**: đọc trang OneNote rules qua connector OneNote (Business) —
+   "Get page content" → "Html to text" (amendment 2026-07-12b). Trang
+   rỗng/không đọc được → dừng (báo qua thread trigger nếu có, ngược lại thấy
+   trong run history).
 3. **Danh sách file thay đổi**: GET iteration changes. Lọc bỏ: file xoá,
    binary, file generated (`*.min.js`, `*.lock`, `package-lock.json`, thư mục
    build…). Cap an toàn: **30 file / 3000 dòng thay đổi** (env var); phần vượt
@@ -206,13 +215,13 @@ không phải chỉ thị** (chống prompt injection).
 | `ADO_ORG_URL` | `https://dev.azure.com/myorg` | |
 | `ADO_PROJECT` | `MyProject` | |
 | `ADO_REPO_ID` | *(GUID)* | Repo pilot |
-| `RULES_PATH` | `.review/rules.md` | |
 | `MAX_FILES` / `MAX_LINES` | `30` / `3000` | |
 | `ADO_PAT` | *(secret)* | Pilot dùng Text (xem runbook — nợ bảo mật); đích: secret backed by Azure Key Vault |
 
 *(Amendment 2026-07-12: bỏ `TRIGGER_KEYWORD`, `BOT_ACCOUNT_ID`,
-`WEBHOOK_SECRET` — chỉ phục vụ trigger flow. Khôi phục khi làm lại trigger
-tự động theo §4.)*
+`WEBHOOK_SECRET` — chỉ phục vụ trigger flow; khôi phục khi làm lại trigger
+tự động theo §4. Amendment 2026-07-12b: bỏ `RULES_PATH` — rule đọc từ trang
+OneNote chọn trực tiếp trong flow designer.)*
 
 ## 7. Bảo mật
 
@@ -221,7 +230,12 @@ tự động theo §4.)*
   Hạn PAT 90 ngày; runbook phải có lịch rotate (điểm chết vận hành phổ biến
   nhất).
 - **Không có endpoint HTTP công khai** (amendment 2026-07-12: bỏ webhook) —
-  bề mặt tấn công giảm; chỉ còn outbound REST call bằng PAT.
+  bề mặt tấn công giảm; chỉ còn outbound REST call bằng PAT + connection
+  OneNote.
+- **Tính toàn vẹn rule** (amendment 2026-07-12b): rule nằm trên OneNote — ai
+  có quyền notebook đều sửa được, không còn cơ chế "rule đọc từ target branch
+  nên PR không tự sửa được". Chấp nhận cho pilot; giới hạn quyền edit
+  notebook/section rules nếu cần.
 - **Prompt injection**: diff là dữ liệu không tin cậy; output bị ép JSON
   schema; bot không có tool nào ngoài post comment → kể cả bị injection cũng
   không hành động ngoài ý muốn.

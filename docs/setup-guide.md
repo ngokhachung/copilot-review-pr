@@ -26,10 +26,14 @@ trên Azure DevOps; (1) tạo solution, agent (vỏ chứa) và environment vari
    hiện tên bạn; đổi sang service account sau): avatar góc phải →
    **User settings → Personal access tokens → New Token** → scope
    **Code → Read & Write**, hạn 90 ngày. Copy PAT ngay (chỉ hiện 1 lần).
-2. **Đưa rule file lên repo**: Repos → **Files** (đang ở default branch) →
-   **⋮ → New → File** → đường dẫn `.review/rules.md` → dán nội dung
-   `templates/rules.md` (repo này) → **Commit** (nếu branch policy chặn commit
-   thẳng thì commit vào branch mới rồi tạo PR merge).
+2. **Chuẩn bị trang OneNote chứa review rules** (amendment 2026-07-12: rule
+   đọc từ OneNote thay vì file trong repo): tạo 1 trang trong notebook OneNote
+   **thuộc OneDrive for Business/SharePoint** (connector không đọc được
+   OneNote cá nhân consumer) mà account build flow truy cập được — ví dụ
+   notebook của team, section `Dev`, page `Code Review Rules`. Dán nội dung
+   `templates/rules.md` (repo này) vào trang, **giữ nguyên format**: mỗi rule
+   có ID (`NAMING-01`…), severity, ví dụ ❌/✅ — prompt nhận diện rule qua
+   format này. Ghi nhớ Notebook/Section/Page — sẽ chọn trong flow designer.
 3. **Lấy repo GUID** (cho biến `prv_ADO_REPO_ID` ở mục 1): mở tab trình duyệt
    đang đăng nhập Azure DevOps, vào URL:
    `https://dev.azure.com/<org>/<project>/_apis/git/repositories/<tên-repo>?api-version=7.1`
@@ -57,15 +61,16 @@ trên Azure DevOps; (1) tạo solution, agent (vỏ chứa) và environment vari
    | `prv_ADO_ORG_URL` | Text | `https://dev.azure.com/<org>` | URL tổ chức Azure DevOps |
    | `prv_ADO_PROJECT` | Text | tên project | Tên project Azure DevOps chứa repo pilot |
    | `prv_ADO_REPO_ID` | Text | *(repo GUID)* | Repo **GUID** — lấy ở mục 0 bước 3 (URL API trên trình duyệt) |
-   | `prv_RULES_PATH` | Text | `.review/rules.md` | Cố định — đường dẫn tới file rule (xem `templates/rules.md`) trong repo |
    | `prv_MAX_FILES` | Number | `30` | Cố định — cap an toàn số file/lần review |
    | `prv_MAX_LINES` | Number | `3000` | Cố định — cap an toàn số dòng thay đổi/lần review |
    | `prv_ADO_PAT` | Text | *(PAT)* | PAT tạo ở mục 0 bước 1 — xem "Lưu ý pilot" bên dưới |
 
    > Ghi chú: các biến `prv_TRIGGER_KEYWORD`, `prv_BOT_ACCOUNT_ID`,
    > `prv_WEBHOOK_BASIC` của thiết kế webhook cũ **không còn cần** — chúng chỉ
-   > phục vụ trigger flow đã bị bỏ (amendment 2026-07-12). Nếu sau này khôi
-   > phục trigger tự động, xem spec mục "Hướng mở rộng trigger".
+   > phục vụ trigger flow đã bị bỏ (amendment 2026-07-12). `prv_RULES_PATH`
+   > cũng bỏ — rule đọc từ OneNote (trang chọn trực tiếp trong flow designer,
+   > không qua env var). Nếu sau này khôi phục trigger tự động / rule trong
+   > repo, xem spec §4 và lịch sử git.
 
    ### Lưu ý pilot: `prv_ADO_PAT`
 
@@ -144,8 +149,10 @@ Chẩn đoán khi run Failed (xem run history, action nào đỏ):
 
 - Action HTTP lỗi **401/Unauthorized** → PAT sai/hết hạn → tạo PAT mới (mục 0
   bước 1), cập nhật `prv_ADO_PAT`.
-- `HTTP_GetRules` lỗi/404 → `.review/rules.md` chưa có trên target branch của
-  PR (mục 0 bước 2).
+- `GetRules_OneNote` lỗi hoặc pipeline dừng ở `Cond_RulesExist` → trang
+  OneNote rules không đọc được: kiểm tra connection của flow (account còn
+  quyền vào notebook?), trang chưa bị xoá/đổi chỗ, nội dung trang không rỗng
+  (mục 0 bước 2).
 - Chi tiết khác: `docs/runbook.md` (mục "Sự cố thường gặp"). Nếu máy có
   PowerShell, các script trong `scripts/` (tuỳ chọn) giúp gọi thử từng API để
   khoanh vùng lỗi nhanh hơn.
