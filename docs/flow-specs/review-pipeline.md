@@ -1,5 +1,8 @@
 # Flow spec: PR Review Pipeline — bản build-ready
 
+> Muốn hiểu **mỗi action làm gì và vì sao cần nó** (thay vì cách build):
+> xem `review-pipeline-explained.md` — cùng tên action, cùng số thứ tự.
+
 Mỗi action bên dưới ghi: **loại action** (gõ vào ô tìm kiếm Add an action), tên
 rename, vị trí đặt, và từng ô điền gì. Ô đánh dấu **fx** = bấm nút fx (Insert
 expression), dán nguyên chuỗi, bấm OK — **không gõ `@{ }`**. Ô đánh dấu
@@ -24,6 +27,22 @@ Quy ước dùng lại nhiều lần:
     `Authorization` — connector tự xác thực qua connection, **không cần PAT**.
   - Action GET: Headers để trống. Action POST/PATCH: thêm 1 header
     `Content-Type` = `application/json` (text).
+- Lỗi khi Save `The name of template action 'X' at line '0' and column '0'
+  is not defined or not valid` = có expression tham chiếu tên action `X`
+  không tồn tại trong flow. Hay gặp: (a) action ADO **chưa rename** — tên mặc
+  định của nó là "Send an HTTP request to Azure DevOps" (dài, dễ quên đổi hơn
+  action HTTP cũ), phải đổi thành tên `HTTP_*` trong spec TRƯỚC khi action
+  khác dán expression trỏ tới; (b) rename lệch 1 ký tự — thừa khoảng trắng
+  cuối khi copy, thiếu `_`, sai hoa/thường; (c) action dùng
+  `items('Apply_to_each_File')` nhưng bị đặt **ngoài** vòng lặp. Cách xử: đọc
+  tên trong nháy đơn của error → tìm/tạo/rename/di chuyển action cho khớp →
+  Save lại.
+- Action **Filter array** có 2 ô, đừng dán nhầm chỗ: ô **From** nhận fx nguồn
+  mảng (kiểu `body('...')?['value']` — KHÔNG có dấu `@` đầu); còn chuỗi bắt
+  đầu bằng `@` (kiểu `@and(...)`, `@equals(...)`) là **điều kiện lọc**, dán
+  vào ô hiện ra sau khi bấm **Edit in advanced mode** dưới cặp ô điều kiện.
+  Lỗi runtime `The 'from' property value ... is of type 'Boolean'. The value
+  must be an array` = điều kiện đã bị dán vào ô From.
 - Trigger inputs: `PullRequestId` = `triggerBody()['number']`,
   `TriggerThreadId` = `triggerBody()['number_1']` (hoặc chọn token từ Dynamic content).
 - **Ô Body của action ADO** là ô văn bản tự do: dán khung JSON như text rồi

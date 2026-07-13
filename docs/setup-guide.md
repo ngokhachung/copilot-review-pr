@@ -36,13 +36,21 @@ review thủ công; (5) kiểm tra sau setup.
    (comment sẽ hiện tên bạn; đổi sang service account sau — chỉ cần sửa
    connection của flow, không sửa action nào).
 2. **Chuẩn bị trang OneNote chứa review rules** (amendment 2026-07-12: rule
-   đọc từ OneNote thay vì file trong repo): tạo 1 trang trong notebook OneNote
-   **thuộc OneDrive for Business/SharePoint** (connector không đọc được
-   OneNote cá nhân consumer) mà account build flow truy cập được — ví dụ
-   notebook của team, section `Dev`, page `Code Review Rules`. Dán nội dung
-   `templates/rules.md` (repo này) vào trang, **giữ nguyên format**: mỗi rule
-   có ID (`NAMING-01`…), severity, ví dụ ❌/✅ — prompt nhận diện rule qua
-   format này. Ghi nhớ Notebook/Section/Page — sẽ chọn trong flow designer.
+   đọc từ OneNote thay vì file trong repo): tạo notebook **trong OneDrive for
+   Business của CHÍNH account sẽ tạo connection OneNote** khi build flow —
+   dropdown của action "Get page content" **chỉ liệt kê notebook ở đó**.
+   Hai loại notebook KHÔNG hiện trong dropdown: (a) notebook trên SharePoint
+   site / Teams channel (notebook của team) — chỉ chọn được bằng "Enter
+   custom value" với URL API dạng
+   `siteCollections/{id}/sites/{id}/notes/sections/{id}` — lằng nhằng, tránh
+   cho pilot; (b) OneNote cá nhân consumer (account Microsoft cá nhân) —
+   connector Business không đọc được. Cách tạo đúng: office.com → OneNote →
+   **New notebook** (mặc định nằm trong OneDrive for Business của account
+   đang đăng nhập) → tạo section `Dev`, page `Code Review Rules`. Dán nội
+   dung `templates/rules.md` (repo này) vào trang, **giữ nguyên format**: mỗi
+   rule có ID (`NAMING-01`…), severity, ví dụ ❌/✅ — prompt nhận diện rule
+   qua format này. Lưu ý: notebook mới tạo có thể mất vài phút mới hiện
+   trong dropdown của designer — refresh/mở lại designer nếu chưa thấy.
 3. **Lấy repo GUID** (cho biến `prv_ADO_REPO_ID` ở mục 1): mở tab trình duyệt
    đang đăng nhập Azure DevOps, vào URL:
    `https://dev.azure.com/<org>/<project>/_apis/git/repositories/<tên-repo>?api-version=7.1`
@@ -86,9 +94,18 @@ review thủ công; (5) kiểm tra sau setup.
    `parameters('prv_ADO_PROJECT')` — tên trong ngoặc là **schema name**
    (trường "Name" của env var trong solution, không phải Display name; copy
    chính xác từ đó). Env var cũng hiện trong panel Dynamic content của
-   designer để click chọn. Hai lỗi hay gặp: (a) chạy ra chuỗi rỗng → env var
-   chưa điền **Current Value**; (b) designer không tìm thấy parameter → flow
-   không nằm trong solution (tạo nhầm từ My flows).
+   designer để click chọn. Bốn lỗi hay gặp: (a) chạy ra chuỗi rỗng → env var
+   chưa điền **Current Value**; (b) designer/save không tìm thấy parameter →
+   flow **được tạo** ngoài solution (từ My flows) — lưu ý: add flow đó vào
+   solution về sau **không sửa được lỗi này**, env var chỉ hoạt động với flow
+   được TẠO từ trong solution/agent → phải tạo flow mới theo mục 3 và dựng
+   lại action; (c) **double
+   prefix**: khi tạo env var, nếu gõ `prv_ADO_ORG` vào ô Display name thì
+   trường Name tự thành `prv_prv_ADO_ORG` (publisher prefix tự thêm vào) →
+   expression `parameters('prv_ADO_ORG')` không khớp; luôn mở lại env var,
+   nhìn trường **Name** thật và dùng đúng chuỗi đó trong expression; (d) env
+   var tạo ở **environment khác** với environment của agent/flow — kiểm tra
+   Environment góc trên phải ở cả hai nơi.
 
 ## 2. Prompt node
 
