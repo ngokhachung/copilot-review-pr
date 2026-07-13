@@ -53,8 +53,11 @@ Quy ước dùng lại nhiều lần:
   Thay vào đó build body thành object bằng expression
   (`json('{}')` + `addProperty`/`createArray`) trong một action **Compose**
   đứng trước, rồi Body của action ADO chỉ còn fx `outputs('Compose_...')` —
-  engine tự escape mọi giá trị khi serialize. Ô **Body is Base64** (nếu
-  hiện) để mặc định No.
+  engine tự escape mọi giá trị khi serialize. Lưu ý: `addProperty` không
+  nhận tên property chứa dấu chấm (lỗi `has these invalid characters '.'`)
+  — các tên `prv.*` phải build bằng tên tạm không chấm rồi đổi tên qua
+  `json(replace(string(...), '"tênTạm"', '"prv.tên"'))` (mẫu ở action 25b,
+  27c). Ô **Body is Base64** (nếu hiện) để mặc định No.
 - Pilot chạy tay: `TriggerThreadId` luôn = 0 → các bước "Reply vào thread
   trigger" được lược bỏ, thay bằng Terminate như ghi ở từng chỗ.
 
@@ -312,12 +315,15 @@ Quy ước dùng lại nhiều lần:
     content chứa xuống dòng/nháy kép làm vỡ JSON, ADO trả 400 TF400898).
     Inputs (fx, dán nguyên MỘT dòng):
     ```
-    addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prv.fingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prv.rule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['ruleId'], ''))))
+    json(replace(replace(string(addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prvFingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prvRule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['ruleId'], ''))))), '"prvFingerprint"', '"prv.fingerprint"'), '"prvRule"', '"prv.rule"'))
     ```
     *(Body dựng ra đúng cấu trúc: `comments[0].content` = nội dung comment
     có icon severity + nhãn rule + message + suggestion; `threadContext` neo
     file/dòng — line ép về số nguyên ≥ 1; `properties` gắn
-    `prv.fingerprint`/`prv.rule`.)*
+    `prv.fingerprint`/`prv.rule`. Vòng `json(replace(replace(string(...))))`
+    bên ngoài là bắt buộc: `addProperty` KHÔNG nhận tên property chứa dấu
+    chấm — build bằng tên tạm `prvFingerprint`/`prvRule` rồi đổi tên trên
+    chuỗi đã serialize.)*
   - **`HTTP_PostThread`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
     - Method: `POST`
     - Relative URI (fx):
@@ -364,9 +370,9 @@ Quy ước dùng lại nhiều lần:
 - Ô trái (fx): `length(body('Filter_SummaryThread'))` · **is equal to** · ô phải (text): `0`
 - Nhánh **Yes** (chưa có summary → tạo mới): **`HTTP_PostSummary`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `POST` · Headers Content-Type
   - Relative URI (fx): giống Relative URI của `HTTP_PostThread` (`.../threads?api-version=7.1`)
-  - Body (fx, dán nguyên MỘT dòng — build object bằng expression, amendment 2026-07-13b):
+  - Body (fx, dán nguyên MỘT dòng — build object bằng expression, amendment 2026-07-13b; tên `prv.summary` có dấu chấm nên phải build qua tên tạm rồi replace, xem ghi chú ở 25b):
     ```
-    addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', outputs('Compose_Summary')))), 'status', 1), 'properties', addProperty(json('{}'), 'prv.summary', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', 'true')))
+    json(replace(string(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', outputs('Compose_Summary')))), 'status', 1), 'properties', addProperty(json('{}'), 'prvSummary', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', 'true')))), '"prvSummary"', '"prv.summary"'))
     ```
 - Nhánh **No** (đã có → update): **`HTTP_PatchSummary`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `PATCH` · Headers Content-Type
   - Relative URI (fx):
