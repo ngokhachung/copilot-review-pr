@@ -11,22 +11,30 @@ review thủ công; (5) kiểm tra sau setup.
 > bằng cách **run tay flow PR Review Pipeline** với PR id — xem mục 3.
 > **Toàn bộ các bước trong guide này làm qua web UI** — các script PowerShell
 > trong `scripts/` chỉ là công cụ debug tuỳ chọn, không bắt buộc.
+>
+> **Cập nhật 2026-07-13:** DLP policy của tenant **chặn connector HTTP** →
+> mọi call Azure DevOps trong flow chuyển sang connector **Azure DevOps**
+> (action "Send an HTTP request to Azure DevOps"), xác thực bằng connection
+> sign-in. Hệ quả: **không cần PAT nữa** — bỏ env var `prv_ADO_PAT`, và
+> `prv_ADO_ORG_URL` thay bằng `prv_ADO_ORG` (chỉ tên org).
 
 ## Điều kiện tiên quyết
 
 - Có quyền tạo solution mới trên môi trường Power Platform (make.powerapps.com)
   dự định dùng cho pilot.
-- Có quyền tạo Personal Access Token trên Azure DevOps (quyền này mọi user
-  đều có cho chính account của mình).
+- Account dùng để sign-in connection Azure DevOps (mục 0 bước 1) có quyền vào
+  repo pilot: đọc code + comment trên PR (quyền Contribute to pull requests).
 
 ## 0. Chuẩn bị trên Azure DevOps (web UI, không cần script/git local)
 
-1. **Tạo PAT**: lý tưởng là tạo service account `svc-pr-review` (cần admin
-   org) rồi tạo PAT của account đó — comment của bot sẽ mang tên riêng. Nếu
-   **không có quyền tạo account**, pilot dùng PAT của chính bạn (comment sẽ
-   hiện tên bạn; đổi sang service account sau): avatar góc phải →
-   **User settings → Personal access tokens → New Token** → scope
-   **Code → Read & Write**, hạn 90 ngày. Copy PAT ngay (chỉ hiện 1 lần).
+1. **Chọn account cho connection Azure DevOps** (amendment 2026-07-13: không
+   dùng PAT nữa — flow xác thực bằng connection sign-in khi build, mục 3;
+   comment của bot sẽ mang tên account đăng nhập connection): lý tưởng là tạo
+   service account `svc-pr-review` (cần admin org) có quyền vào repo pilot
+   (Code read + Contribute to pull requests) rồi sign-in bằng account đó. Nếu
+   **không có quyền tạo account**, pilot sign-in bằng account của chính bạn
+   (comment sẽ hiện tên bạn; đổi sang service account sau — chỉ cần sửa
+   connection của flow, không sửa action nào).
 2. **Chuẩn bị trang OneNote chứa review rules** (amendment 2026-07-12: rule
    đọc từ OneNote thay vì file trong repo): tạo 1 trang trong notebook OneNote
    **thuộc OneDrive for Business/SharePoint** (connector không đọc được
@@ -59,35 +67,28 @@ review thủ công; (5) kiểm tra sau setup.
 
    | Tên biến | Data type | Giá trị mẫu | Lấy ở đâu |
    |---|---|---|---|
-   | `prv_ADO_ORG_URL` | Text | `https://dev.azure.com/<org>` | URL tổ chức Azure DevOps |
+   | `prv_ADO_ORG` | Text | `<org>` | **Tên** org Azure DevOps — phần sau `https://dev.azure.com/` trong URL |
    | `prv_ADO_PROJECT` | Text | tên project | Tên project Azure DevOps chứa repo pilot |
    | `prv_ADO_REPO_ID` | Text | *(repo GUID)* | Repo **GUID** — lấy ở mục 0 bước 3 (URL API trên trình duyệt) |
    | `prv_MAX_FILES` | Number | `30` | Cố định — cap an toàn số file/lần review |
    | `prv_MAX_LINES` | Number | `3000` | Cố định — cap an toàn số dòng thay đổi/lần review |
-   | `prv_ADO_PAT` | Text | *(PAT)* | PAT tạo ở mục 0 bước 1 — xem "Lưu ý pilot" bên dưới |
 
    > Ghi chú: các biến `prv_TRIGGER_KEYWORD`, `prv_BOT_ACCOUNT_ID`,
    > `prv_WEBHOOK_BASIC` của thiết kế webhook cũ **không còn cần** — chúng chỉ
    > phục vụ trigger flow đã bị bỏ (amendment 2026-07-12). `prv_RULES_PATH`
    > cũng bỏ — rule đọc từ OneNote (trang chọn trực tiếp trong flow designer,
-   > không qua env var). Nếu sau này khôi phục trigger tự động / rule trong
-   > repo, xem spec §4 và lịch sử git.
+   > không qua env var). `prv_ADO_PAT` và `prv_ADO_ORG_URL` bỏ từ amendment
+   > 2026-07-13 — connector Azure DevOps xác thực bằng connection (không PAT)
+   > và chỉ cần tên org (`prv_ADO_ORG`). Nếu sau này khôi phục trigger tự
+   > động / rule trong repo, xem spec §4 và lịch sử git.
 
    Cách flow đọc env var: trong expression (fx) dùng
-   `parameters('prv_ADO_ORG_URL')` — tên trong ngoặc là **schema name**
+   `parameters('prv_ADO_PROJECT')` — tên trong ngoặc là **schema name**
    (trường "Name" của env var trong solution, không phải Display name; copy
    chính xác từ đó). Env var cũng hiện trong panel Dynamic content của
    designer để click chọn. Hai lỗi hay gặp: (a) chạy ra chuỗi rỗng → env var
    chưa điền **Current Value**; (b) designer không tìm thấy parameter → flow
    không nằm trong solution (tạo nhầm từ My flows).
-
-   ### Lưu ý pilot: `prv_ADO_PAT`
-
-   `prv_ADO_PAT` = PAT. **Lưu ý pilot:** dùng Data type **Text** — kiểu Secret
-   yêu cầu Azure Key Vault và flow phải đọc qua action riêng
-   (`RetrieveEnvironmentVariableSecretValue`), phức tạp không đáng cho pilot.
-   Ghi nợ bảo mật: nâng lên KV-backed Secret trước khi nhân rộng (đã ghi trong
-   runbook).
 
 ## 2. Prompt node
 
@@ -131,9 +132,9 @@ nằm ngoài JSON → kiểm tra lại đã bật JSON output format ở Prompt 
 Làm rõ thuật ngữ: **agent flow chính là flow Power Automate** — cùng một
 designer, cùng loại action — chỉ khác là được tạo/quản lý **bên trong Copilot
 Studio** (thuộc agent) và tính phí qua capacity Copilot Studio, nên không cần
-license Power Automate Premium riêng cho HTTP connector. Guide này dùng agent
-flow (tạo flow rời rạc bên ngoài solution sẽ không truy cập được các biến
-`parameters('prv_...')`).
+license Power Automate Premium riêng cho connector Premium (ở đây là connector
+**Azure DevOps**). Guide này dùng agent flow (tạo flow rời rạc bên ngoài
+solution sẽ không truy cập được các biến `parameters('prv_...')`).
 
 1. Vào **copilotstudio.microsoft.com** → kiểm tra **Environment** (góc trên
    phải) đúng environment chứa solution → **Agents** → mở agent
@@ -160,7 +161,14 @@ flow (tạo flow rời rạc bên ngoài solution sẽ không truy cập đượ
      retry `Prompt_Review_2`/`Parse_Findings_2`, `Apply_to_each_Finding`,
      `Scope_Catch` — vì mặc định action chỉ chạy khi bước trước thành công.
 
-   Hai chỗ sẽ hỏi connection lần đầu:
+   Ba chỗ sẽ hỏi connection lần đầu:
+   - Action 4 (`HTTP_GetPR`): connector **Azure DevOps** yêu cầu **Sign in**
+     → đăng nhập bằng account đã chọn ở mục 0 bước 1 (comment bot đứng tên
+     account này). Mọi action ADO còn lại dùng lại connection này, không hỏi
+     nữa. Nếu action **Send an HTTP request to Azure DevOps** không xuất hiện
+     khi tìm hoặc flow báo DLP violation khi save → connector Azure DevOps
+     cũng bị DLP chặn, liên hệ admin xin đưa nó vào cùng nhóm Business với
+     OneNote/AI Builder.
    - Action 8 (`GetRules_OneNote`): connector **OneNote (Business)** yêu cầu
      đăng nhập → chọn Notebook/Section/Page đã chuẩn bị ở mục 0 bước 2.
    - Action 21 (`Prompt_Review`): action **Run a prompt** — nếu chưa tạo
@@ -170,8 +178,8 @@ flow (tạo flow rời rạc bên ngoài solution sẽ không truy cập đượ
 Dự phòng: nếu tenant của bạn không cho đổi trigger manual trong agent flow,
 tạo cloud flow trong solution thay thế (make.powerapps.com → Solutions →
 PR Review Agent → **New → Automation → Cloud flow → Instant** → "Manually
-trigger a flow") — cùng designer, nhưng HTTP connector khi đó cần license
-Power Automate Premium; nếu bị chặn license, quay lại đường agent flow.
+trigger a flow") — cùng designer, nhưng connector Azure DevOps khi đó cần
+license Power Automate Premium; nếu bị chặn license, quay lại đường agent flow.
 
 ## 4. Chạy review (manual run)
 
@@ -212,8 +220,10 @@ thống hoạt động đúng trước khi bắt đầu pilot:
 
 Chẩn đoán khi run Failed (xem run history, action nào đỏ):
 
-- Action HTTP lỗi **401/Unauthorized** → PAT sai/hết hạn → tạo PAT mới (mục 0
-  bước 1), cập nhật `prv_ADO_PAT`.
+- Action ADO (Send an HTTP request to Azure DevOps) lỗi **401/403** →
+  connection hỏng hoặc account mất quyền repo → mở flow → ⋯ → Connections →
+  Sign in lại connection Azure DevOps; kiểm tra account còn quyền đọc code +
+  comment PR trên repo pilot (mục 0 bước 1).
 - `GetRules_OneNote` lỗi hoặc pipeline dừng ở `Cond_RulesExist` → trang
   OneNote rules không đọc được: kiểm tra connection của flow (account còn
   quyền vào notebook?), trang chưa bị xoá/đổi chỗ, nội dung trang không rỗng

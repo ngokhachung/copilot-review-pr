@@ -8,20 +8,30 @@ expression (expression tham chiếu theo tên).
 
 Quy ước dùng lại nhiều lần:
 
-- **AUTH** — mọi action HTTP đều có header `Authorization`, value (fx):
-  ```
-  concat('Basic ', base64(concat(':', parameters('prv_ADO_PAT'))))
-  ```
-  Action POST/PATCH thêm header thứ hai: `Content-Type` = `application/json` (text).
+- **ADO** — mọi action gọi Azure DevOps dùng loại **Send an HTTP request to
+  Azure DevOps** (connector **Azure DevOps** — gõ nguyên tên action vào ô tìm
+  kiếm Add an action). **KHÔNG dùng action HTTP thường** — DLP policy của
+  tenant chặn connector HTTP (amendment 2026-07-13). Tên action vẫn giữ tiền
+  tố `HTTP_` như cũ để expression tham chiếu không đổi. Ô chung của mọi action
+  ADO:
+  - **Organization Name**: chọn org từ dropdown, hoặc **Enter custom value** →
+    fx `parameters('prv_ADO_ORG')`. Lần đầu thêm action sẽ yêu cầu **Sign in**
+    tạo connection — đăng nhập account có quyền vào repo (comment của bot sẽ
+    đứng tên account này — xem setup guide mục 0 bước 1); các action ADO sau
+    dùng lại connection đó, không hỏi nữa.
+  - **Method** và **Relative URI** (fx): ghi ở từng action. Relative URI là
+    phần URL **sau** tên org, bắt đầu bằng tên project. Không có header
+    `Authorization` — connector tự xác thực qua connection, **không cần PAT**.
+  - Action GET: Headers để trống. Action POST/PATCH: thêm 1 header
+    `Content-Type` = `application/json` (text).
 - Trigger inputs: `PullRequestId` = `triggerBody()['number']`,
   `TriggerThreadId` = `triggerBody()['number_1']` (hoặc chọn token từ Dynamic content).
-- **Ô Body của action HTTP** là ô văn bản tự do (đừng nhầm với Queries — bảng
-  key–value cho tham số URL, ta không dùng): dán khung JSON như text rồi thay
-  từng ký hiệu ❶❷❸ bằng token fx — cảnh báo JSON đỏ trong lúc còn ký hiệu là
-  bình thường, thay hết là hết. Nếu designer vẫn không chịu: thêm 1 action
-  **Compose** ngay trước (ví dụ `Compose_ThreadBody`), dán khung + token vào ô
-  Inputs của Compose, rồi Body của HTTP action chỉ còn fx
-  `outputs('Compose_ThreadBody')`.
+- **Ô Body của action ADO** là ô văn bản tự do: dán khung JSON như text rồi
+  thay từng ký hiệu ❶❷❸ bằng token fx — cảnh báo JSON đỏ trong lúc còn ký hiệu
+  là bình thường, thay hết là hết. Ô **Body is Base64** (nếu hiện) để mặc định
+  No. Nếu designer vẫn không chịu: thêm 1 action **Compose** ngay trước (ví dụ
+  `Compose_ThreadBody`), dán khung + token vào ô Inputs của Compose, rồi Body
+  của action ADO chỉ còn fx `outputs('Compose_ThreadBody')`.
 - Pilot chạy tay: `TriggerThreadId` luôn = 0 → các bước "Reply vào thread
   trigger" được lược bỏ, thay bằng Terminate như ghi ở từng chỗ.
 
@@ -46,20 +56,19 @@ Quy ước dùng lại nhiều lần:
 
 ### Khối A — fetch & validate (action xếp nối tiếp trong Scope_Try)
 
-**4. `HTTP_GetPR`** — loại **HTTP**
+**4. `HTTP_GetPR`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
 - Method: `GET`
-- URI (fx):
+- Relative URI (fx):
   ```
-  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '?api-version=7.1')
+  concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '?api-version=7.1')
   ```
-- Headers: AUTH
 
 **5. `Cond_Active`** — loại **Condition**
 - Ô trái (fx): `body('HTTP_GetPR')?['status']` · toán tử **is equal to** · ô phải (text): `active`
 - Nhánh **Yes: để trống** (action 6 trở đi đặt SAU khối Condition này)
 - Nhánh **No**: 1 action **Terminate** — Status: `Succeeded`
   *(PR đã đóng = kết cục hợp lệ. Bản đầy đủ cho auto-trigger sau này: thêm
-  Condition `TriggerThreadId > 0` → HTTP POST reply trước Terminate.)*
+  Condition `TriggerThreadId > 0` → action ADO POST reply trước Terminate.)*
 
 **6. `Compose_SourceBranch`** — loại **Compose**
 - Inputs (fx): `replace(body('HTTP_GetPR')?['sourceRefName'], 'refs/heads/', '')`
@@ -84,24 +93,22 @@ Quy ước dùng lại nhiều lần:
   `Không đọc được review rules từ OneNote — kiểm tra trang rules và connection của flow`
   *(Lỗi cấu hình → Failed để run history hiện rõ nguyên nhân.)*
 
-**10a. `HTTP_GetIterations`** — loại **HTTP**
+**10a. `HTTP_GetIterations`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
 - Method: `GET`
-- URI (fx):
+- Relative URI (fx):
   ```
-  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/iterations?api-version=7.1')
+  concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/iterations?api-version=7.1')
   ```
-- Headers: AUTH
 
 **10b. `Compose_IterationId`** — loại **Compose**
 - Inputs (fx): `last(body('HTTP_GetIterations')?['value'])?['id']`
 
-**11. `HTTP_GetChanges`** — loại **HTTP**
+**11. `HTTP_GetChanges`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
 - Method: `GET`
-- URI (fx):
+- Relative URI (fx):
   ```
-  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/iterations/', outputs('Compose_IterationId'), '/changes?$compareTo=0&api-version=7.1')
+  concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/iterations/', outputs('Compose_IterationId'), '/changes?$compareTo=0&api-version=7.1')
   ```
-- Headers: AUTH
 
 **12. `Filter_Files`** — loại **Filter array** (Data Operation)
 - From (fx): `body('HTTP_GetChanges')?['changeEntries']`
@@ -127,13 +134,12 @@ Quy ước dùng lại nhiều lần:
 - **Settings** của action (⋯ → Settings): bật **Concurrency control**, Degree of parallelism = **1**
 - Action 15→23 nằm **bên trong** vòng lặp này:
 
-**15. `HTTP_GetAfter`** — loại **HTTP**
+**15. `HTTP_GetAfter`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
 - Method: `GET`
-- URI (fx):
+- Relative URI (fx):
   ```
-  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/items?path=', encodeUriComponent(items('Apply_to_each_File')?['item']?['path']), '&versionDescriptor.version=', encodeUriComponent(outputs('Compose_SourceBranch')), '&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1')
+  concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/items?path=', encodeUriComponent(items('Apply_to_each_File')?['item']?['path']), '&versionDescriptor.version=', encodeUriComponent(outputs('Compose_SourceBranch')), '&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1')
   ```
-- Headers: AUTH
 
 **16. `Compose_Lines`** — loại **Compose**
 - Inputs (fx): `split(body('HTTP_GetAfter')?['content'], decodeUriComponent('%0A'))`
@@ -159,13 +165,12 @@ Quy ước dùng lại nhiều lần:
 **19b. `Compose_AfterNumbered`** — loại **Compose**
 - Inputs (fx): `join(body('Select_Numbered'), decodeUriComponent('%0A'))`
 
-**20a. `HTTP_GetBefore`** — loại **HTTP**
+**20a. `HTTP_GetBefore`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
 - Method: `GET`
-- URI (fx): giống `HTTP_GetAfter` nhưng version = TargetBranch:
+- Relative URI (fx): giống `HTTP_GetAfter` nhưng version = TargetBranch:
   ```
-  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/items?path=', encodeUriComponent(items('Apply_to_each_File')?['item']?['path']), '&versionDescriptor.version=', encodeUriComponent(outputs('Compose_TargetBranch')), '&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1')
+  concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/items?path=', encodeUriComponent(items('Apply_to_each_File')?['item']?['path']), '&versionDescriptor.version=', encodeUriComponent(outputs('Compose_TargetBranch')), '&versionDescriptor.versionType=branch&includeContent=true&$format=json&api-version=7.1')
   ```
-- Headers: AUTH
 
 **20b. `Compose_Before`** — loại **Compose**
 - **Configure run after**: tick cả **is successful** và **has failed** (file mới → GetBefore 404)
@@ -239,13 +244,12 @@ Quy ước dùng lại nhiều lần:
 
 ### Khối C — đối chiếu thread cũ & post (action nối tiếp trong Scope_Try)
 
-**24a. `HTTP_GetThreads`** — loại **HTTP**
+**24a. `HTTP_GetThreads`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
 - Method: `GET`
-- URI (fx):
+- Relative URI (fx):
   ```
-  concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
+  concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
   ```
-- Headers: AUTH
 
 **24b. `Filter_BotThreads`** — loại **Filter array**
 - From (fx): `body('HTTP_GetThreads')?['value']`
@@ -279,13 +283,13 @@ Quy ước dùng lại nhiều lần:
 
 **25b. `Apply_to_each_New`** — loại **Apply to each**
 - Select an output (fx): `body('Filter_NewFindings')`
-- Bên trong: **`HTTP_PostThread`** — loại **HTTP**
+- Bên trong: **`HTTP_PostThread`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
   - Method: `POST`
-  - URI (fx):
+  - Relative URI (fx):
     ```
-    concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
+    concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
     ```
-  - Headers: AUTH + `Content-Type` = `application/json`
+  - Headers: `Content-Type` = `application/json`
   - Body: dán khung JSON sau như text, rồi tại 5 vị trí ❶–❺ xoá ký hiệu và chèn expression bằng fx:
     ```json
     {
@@ -321,16 +325,16 @@ Quy ước dùng lại nhiều lần:
 **26b. `Apply_to_each_Fixed`** — loại **Apply to each**
 - Select an output (fx): `body('Filter_FixedThreads')`
 - Bên trong, 2 action nối tiếp:
-  - **`HTTP_ReplyFixed`** — loại **HTTP** — Method `POST` · Headers AUTH + Content-Type
-    - URI (fx):
+  - **`HTTP_ReplyFixed`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `POST` · Headers Content-Type
+    - Relative URI (fx):
       ```
-      concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', items('Apply_to_each_Fixed')?['id'], '/comments?api-version=7.1')
+      concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', items('Apply_to_each_Fixed')?['id'], '/comments?api-version=7.1')
       ```
     - Body (text, dán nguyên): `{ "parentCommentId": 1, "content": "✅ Đã fix — cảm ơn bạn!", "commentType": 1 }`
-  - **`HTTP_ResolveThread`** — loại **HTTP** — Method `PATCH` · Headers AUTH + Content-Type
-    - URI (fx):
+  - **`HTTP_ResolveThread`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `PATCH` · Headers Content-Type
+    - Relative URI (fx):
       ```
-      concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', items('Apply_to_each_Fixed')?['id'], '?api-version=7.1')
+      concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', items('Apply_to_each_Fixed')?['id'], '?api-version=7.1')
       ```
     - Body (text): `{ "status": "fixed" }`
 
@@ -346,8 +350,8 @@ Quy ước dùng lại nhiều lần:
 
 **27c. `Cond_SummaryExists`** — loại **Condition**
 - Ô trái (fx): `length(body('Filter_SummaryThread'))` · **is equal to** · ô phải (text): `0`
-- Nhánh **Yes** (chưa có summary → tạo mới): **`HTTP_PostSummary`** — loại **HTTP** — Method `POST` · Headers AUTH + Content-Type
-  - URI (fx): giống URI của `HTTP_PostThread` (`.../threads?api-version=7.1`)
+- Nhánh **Yes** (chưa có summary → tạo mới): **`HTTP_PostSummary`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `POST` · Headers Content-Type
+  - Relative URI (fx): giống Relative URI của `HTTP_PostThread` (`.../threads?api-version=7.1`)
   - Body: dán khung, chèn ❶ = fx `outputs('Compose_Summary')` giữa nháy kép:
     ```json
     {
@@ -356,26 +360,27 @@ Quy ước dùng lại nhiều lần:
       "properties": { "prv.summary": { "$type": "System.String", "$value": "true" } }
     }
     ```
-- Nhánh **No** (đã có → update): **`HTTP_PatchSummary`** — loại **HTTP** — Method `PATCH` · Headers AUTH + Content-Type
-  - URI (fx):
+- Nhánh **No** (đã có → update): **`HTTP_PatchSummary`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `PATCH` · Headers Content-Type
+  - Relative URI (fx):
     ```
-    concat(parameters('prv_ADO_ORG_URL'), '/', parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', first(body('Filter_SummaryThread'))?['id'], '/comments/1?api-version=7.1')
+    concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', first(body('Filter_SummaryThread'))?['id'], '/comments/1?api-version=7.1')
     ```
   - Body: `{ "content": "❶" }` với ❶ = fx `outputs('Compose_Summary')` (giữa nháy kép)
 
 **27d. Reply thread trigger** — *(pilot chạy tay: BỎ QUA — TriggerThreadId luôn 0)*
-Bản đầy đủ: Condition `TriggerThreadId > 0` → HTTP POST `.../threads/{TriggerThreadId}/comments?api-version=7.1` với content = "✅ Review xong — … finding mới, … đã fix, … còn lại."
+Bản đầy đủ: Condition `TriggerThreadId > 0` → action ADO POST `.../threads/{TriggerThreadId}/comments?api-version=7.1` với content = "✅ Review xong — … finding mới, … đã fix, … còn lại."
 
 ## `Scope_Catch` — loại **Scope**, đặt NGOÀI và SAU `Scope_Try`
 
 - **Configure run after** (của `Scope_Try`): bỏ tick "is successful", tick **has failed** + **has timed out**
 - Bên trong (pilot): 1 action **Terminate** — Status: `Failed` · Message (text):
   `Review thất bại giữa chừng — mở run history xem action đỏ trong Scope_Try`
-- Bản đầy đủ cho auto-trigger: Condition `TriggerThreadId > 0` → HTTP POST reply "❌ Review thất bại" vào thread trigger.
+- Bản đầy đủ cho auto-trigger: Condition `TriggerThreadId > 0` → action ADO POST reply "❌ Review thất bại" vào thread trigger.
 
 ## Checklist sau khi build xong
 
 1. Đủ 3 Init variable **ngoài** Scope_Try; action 4→27 **trong** Scope_Try; Scope_Catch ngoài.
 2. Các chỗ Configure run after: `Cond_RulesExist` (9), `Compose_Before` (20b), `Prompt_Review_2` (22b), `Append_SkipParse` (22d), `Apply_to_each_Finding` (23), `Scope_Catch`.
 3. `Apply_to_each_File` bật Concurrency = 1.
-4. Test → Manually: `PullRequestId` = Golden PR id, `TriggerThreadId` = 0 → xem setup guide mục 5.
+4. Không còn action nào là loại **HTTP** thường (DLP chặn) — mọi action `HTTP_*` đều là **Send an HTTP request to Azure DevOps**, dùng chung 1 connection Azure DevOps, không có header Authorization.
+5. Test → Manually: `PullRequestId` = Golden PR id, `TriggerThreadId` = 0 → xem setup guide mục 5.
