@@ -45,12 +45,16 @@ Quy ước dùng lại nhiều lần:
   must be an array` = điều kiện đã bị dán vào ô From.
 - Trigger inputs: `PullRequestId` = `triggerBody()['number']`,
   `TriggerThreadId` = `triggerBody()['number_1']` (hoặc chọn token từ Dynamic content).
-- **Ô Body của action ADO** là ô văn bản tự do: dán khung JSON như text rồi
-  thay từng ký hiệu ❶❷❸ bằng token fx — cảnh báo JSON đỏ trong lúc còn ký hiệu
-  là bình thường, thay hết là hết. Ô **Body is Base64** (nếu hiện) để mặc định
-  No. Nếu designer vẫn không chịu: thêm 1 action **Compose** ngay trước (ví dụ
-  `Compose_ThreadBody`), dán khung + token vào ô Inputs của Compose, rồi Body
-  của action ADO chỉ còn fx `outputs('Compose_ThreadBody')`.
+- **Ô Body của action ADO** (amendment 2026-07-13b): body **tĩnh** (JSON
+  không chứa token — như `HTTP_ReplyFixed`, `HTTP_ResolveThread`) dán thẳng
+  như text. Body **động** (chứa nội dung AI/biến) KHÔNG được dán JSON text
+  rồi chèn token vào giữa — giá trị chứa xuống dòng hoặc dấu `"` (message
+  tiếng Việt của AI luôn có) sẽ làm vỡ JSON → ADO trả **400 TF400898**.
+  Thay vào đó build body thành object bằng expression
+  (`json('{}')` + `addProperty`/`createArray`) trong một action **Compose**
+  đứng trước, rồi Body của action ADO chỉ còn fx `outputs('Compose_...')` —
+  engine tự escape mọi giá trị khi serialize. Ô **Body is Base64** (nếu
+  hiện) để mặc định No.
 - Pilot chạy tay: `TriggerThreadId` luôn = 0 → các bước "Reply vào thread
   trigger" được lược bỏ, thay bằng Terminate như ghi ở từng chỗ.
 
@@ -302,37 +306,26 @@ Quy ước dùng lại nhiều lần:
 
 **25b. `Apply_to_each_New`** — loại **Apply to each**
 - Select an output (fx): `body('Filter_NewFindings')`
-- Bên trong: **`HTTP_PostThread`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
-  - Method: `POST`
-  - Relative URI (fx):
+- Bên trong, 2 action nối tiếp:
+  - **`Compose_ThreadBody`** — loại **Compose** — build body thread bằng
+    expression (amendment 2026-07-13b: KHÔNG dán JSON text chèn token —
+    content chứa xuống dòng/nháy kép làm vỡ JSON, ADO trả 400 TF400898).
+    Inputs (fx, dán nguyên MỘT dòng):
     ```
-    concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
+    addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prv.fingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prv.rule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['ruleId'], ''))))
     ```
-  - Headers: `Content-Type` = `application/json`
-  - Body: dán khung JSON sau như text, rồi tại 5 vị trí ❶–❺ xoá ký hiệu và chèn expression bằng fx:
-    ```json
-    {
-      "comments": [ { "parentCommentId": 0, "content": "❶", "commentType": 1 } ],
-      "status": 1,
-      "threadContext": {
-        "filePath": "❷",
-        "rightFileStart": { "line": ❸, "offset": 1 },
-        "rightFileEnd": { "line": ❸, "offset": 1 }
-      },
-      "properties": {
-        "prv.fingerprint": { "$type": "System.String", "$value": "❹" },
-        "prv.rule": { "$type": "System.String", "$value": "❺" }
-      }
-    }
-    ```
-    - ❶ (fx — chèn GIỮA 2 dấu nháy kép):
+    *(Body dựng ra đúng cấu trúc: `comments[0].content` = nội dung comment
+    có icon severity + nhãn rule + message + suggestion; `threadContext` neo
+    file/dòng — line ép về số nguyên ≥ 1; `properties` gắn
+    `prv.fingerprint`/`prv.rule`.)*
+  - **`HTTP_PostThread`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
+    - Method: `POST`
+    - Relative URI (fx):
       ```
-      concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')
+      concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads?api-version=7.1')
       ```
-    - ❷ (fx, giữa nháy kép): `if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))`
-    - ❸ (fx, XOÁ luôn ký hiệu — số không có nháy, chèn ở cả 2 chỗ): `item()?['line']`
-    - ❹ (fx, giữa nháy kép): `item()?['fingerprint']`
-    - ❺ (fx, giữa nháy kép): `coalesce(item()?['ruleId'], '')`
+    - Headers: `Content-Type` = `application/json`
+    - Body (fx): `outputs('Compose_ThreadBody')`
 
 **26a. `Filter_FixedThreads`** — loại **Filter array**
 - From (fx): `body('Filter_BotActive')`
@@ -371,20 +364,16 @@ Quy ước dùng lại nhiều lần:
 - Ô trái (fx): `length(body('Filter_SummaryThread'))` · **is equal to** · ô phải (text): `0`
 - Nhánh **Yes** (chưa có summary → tạo mới): **`HTTP_PostSummary`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `POST` · Headers Content-Type
   - Relative URI (fx): giống Relative URI của `HTTP_PostThread` (`.../threads?api-version=7.1`)
-  - Body: dán khung, chèn ❶ = fx `outputs('Compose_Summary')` giữa nháy kép:
-    ```json
-    {
-      "comments": [ { "parentCommentId": 0, "content": "❶", "commentType": 1 } ],
-      "status": 1,
-      "properties": { "prv.summary": { "$type": "System.String", "$value": "true" } }
-    }
+  - Body (fx, dán nguyên MỘT dòng — build object bằng expression, amendment 2026-07-13b):
+    ```
+    addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', outputs('Compose_Summary')))), 'status', 1), 'properties', addProperty(json('{}'), 'prv.summary', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', 'true')))
     ```
 - Nhánh **No** (đã có → update): **`HTTP_PatchSummary`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO) — Method `PATCH` · Headers Content-Type
   - Relative URI (fx):
     ```
     concat(parameters('prv_ADO_PROJECT'), '/_apis/git/repositories/', parameters('prv_ADO_REPO_ID'), '/pullRequests/', triggerBody()['number'], '/threads/', first(body('Filter_SummaryThread'))?['id'], '/comments/1?api-version=7.1')
     ```
-  - Body: `{ "content": "❶" }` với ❶ = fx `outputs('Compose_Summary')` (giữa nháy kép)
+  - Body (fx): `addProperty(json('{}'), 'content', outputs('Compose_Summary'))`
 
 **27d. Reply thread trigger** — *(pilot chạy tay: BỎ QUA — TriggerThreadId luôn 0)*
 Bản đầy đủ: Condition `TriggerThreadId > 0` → action ADO POST `.../threads/{TriggerThreadId}/comments?api-version=7.1` với content = "✅ Review xong — … finding mới, … đã fix, … còn lại."

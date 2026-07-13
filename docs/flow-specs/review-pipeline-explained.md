@@ -186,10 +186,13 @@ resolve. Bot **không mở lại** (nguyên tắc never-reopen — tôn trọng 
 **25a. `Filter_NewFindings`** — findings có fingerprint **chưa từng có
 thread** → đây mới là danh sách cần post comment.
 
-**25b. `Apply_to_each_New`** → **`HTTP_PostThread`** — post 1 thread inline
-cho từng finding mới: nội dung comment (icon severity + rule + message +
-suggestion), toạ độ file/dòng để ADO neo vào đúng chỗ trong tab Files, và 2
-property `prv.fingerprint`/`prv.rule` để các lần chạy sau nhận diện.
+**25b. `Apply_to_each_New`** → **`Compose_ThreadBody`** + **`HTTP_PostThread`**
+— post 1 thread inline cho từng finding mới: nội dung comment (icon severity
++ rule + message + suggestion), toạ độ file/dòng để ADO neo vào đúng chỗ
+trong tab Files, và 2 property `prv.fingerprint`/`prv.rule` để các lần chạy
+sau nhận diện. Body được build thành object bằng expression trong
+`Compose_ThreadBody` (không ghép chuỗi JSON) — để engine tự escape xuống
+dòng/nháy kép trong nội dung AI sinh ra, tránh vỡ JSON (400 TF400898).
 
 **26a. `Filter_FixedThreads`** — thread bot đang active nhưng fingerprint
 **không còn** trong findings mới = vi phạm đã được fix trong code.
