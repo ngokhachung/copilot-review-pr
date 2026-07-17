@@ -13,6 +13,14 @@ Output: **JSON** (bật JSON response format). Temperature: thấp nhất có th
 > `coalesce(ruleId, ...)` sẵn có. Đồng thời bug giờ đặt `ruleId = "BUG"`
 > (trước kia để rỗng làm nhãn comment hiện `[]`).
 
+> **Cập nhật 2026-07-17:** `message`/`suggestion` đổi sang viết bằng
+> **tiếng Anh** (trước đây tiếng Việt) — chỉ đổi 1 chữ ở instruction 6, JSON
+> schema không đổi. Đổi để khớp format comment mới trên PR (label kiểu
+> conventional comments `[must]`/`[suggestion]`/`[nits]`/`[imo]`, suy ra từ
+> `type`+`severity` ngay trong flow — xem amendment 2026-07-17 ở
+> `docs/flow-specs/review-pipeline.md`, mục `Compose_ThreadBody`). Cách áp
+> dụng: copy toàn bộ prompt text bên dưới → dán đè trong AI hub → Save.
+
 ## Prompt text
 
 You are a strict code reviewer. Review ONE changed file from a pull request
@@ -71,7 +79,7 @@ INSTRUCTIONS:
    "snippet" must be the exact code text of that line (without the number).
    For "arch"/"clean" findings that span a block, anchor to the most
    representative changed line of that block.
-6. Write "message" and "suggestion" in Vietnamese. Quote the rule
+6. Write "message" and "suggestion" in English. Quote the rule
    requirement in the message for type "rule". For "clean" and "arch", the
    message must say WHY it hurts (maintainability, testability, coupling) —
    not just restate the code — and the suggestion must name the concrete

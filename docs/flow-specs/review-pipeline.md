@@ -313,17 +313,28 @@ Quy ước dùng lại nhiều lần:
   - **`Compose_ThreadBody`** — loại **Compose** — build body thread bằng
     expression (amendment 2026-07-13b: KHÔNG dán JSON text chèn token —
     content chứa xuống dòng/nháy kép làm vỡ JSON, ADO trả 400 TF400898).
+    **Amendment 2026-07-17:** đổi format `content` sang kiểu conventional
+    comments, 4 dòng — `[label]` → ID rule → nội dung finding (tiếng Anh,
+    từ prompt — xem amendment 2026-07-17 ở `prompts/review-prompt.md`) →
+    (nếu có suggestion) dòng `Gợi ý solution:` rồi nội dung suggestion ở
+    dòng kế tiếp; vẫn giữ footer `<sub>PR Review Agent · type</sub>` để
+    nhận diện comment của bot. `label` suy ra từ `type`+`severity` ngay
+    trong expression (không cần đổi JSON schema của `Parse_Findings`):
+    `type="bug"` hoặc (`type="rule"` và `severity="error"`) → `must`;
+    `type="rule"` và `severity="warning"` → `suggestion`; `type="rule"` và
+    `severity="info"`, hoặc `type="clean"` → `nits`; `type="arch"` → `imo`.
+    Hai nhãn `imho`/`ask` trong bộ convention KHÔNG được bot dùng tự động —
+    để dành cho người review comment tay.
     Inputs (fx, dán nguyên MỘT dòng):
     ```
-    json(replace(replace(string(addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat(if(equals(item()?['severity'],'error'),'🔴',if(equals(item()?['severity'],'warning'),'🟡','🔵')), ' **[', coalesce(item()?['ruleId'],'BUG'), ']** ', item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'💡 ', item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prvFingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prvRule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['ruleId'], ''))))), '"prvFingerprint"', '"prv.fingerprint"'), '"prvRule"', '"prv.rule"'))
+    json(replace(replace(string(addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat('[', if(equals(item()?['type'],'bug'),'must',if(equals(item()?['type'],'rule'),if(equals(item()?['severity'],'error'),'must',if(equals(item()?['severity'],'warning'),'suggestion','nits')),if(equals(item()?['type'],'arch'),'imo','nits'))), ']', decodeUriComponent('%0A'), coalesce(item()?['ruleId'],'BUG'), decodeUriComponent('%0A'), item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'Gợi ý solution:', decodeUriComponent('%0A'), item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prvFingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prvRule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['ruleId'], ''))))), '"prvFingerprint"', '"prv.fingerprint"'), '"prvRule"', '"prv.rule"'))
     ```
     *(Body dựng ra đúng cấu trúc: `comments[0].content` = nội dung comment
-    có icon severity + nhãn rule + message + suggestion; `threadContext` neo
-    file/dòng — line ép về số nguyên ≥ 1; `properties` gắn
-    `prv.fingerprint`/`prv.rule`. Vòng `json(replace(replace(string(...))))`
-    bên ngoài là bắt buộc: `addProperty` KHÔNG nhận tên property chứa dấu
-    chấm — build bằng tên tạm `prvFingerprint`/`prvRule` rồi đổi tên trên
-    chuỗi đã serialize.)*
+    4 dòng như trên; `threadContext` neo file/dòng — line ép về số nguyên
+    ≥ 1; `properties` gắn `prv.fingerprint`/`prv.rule`. Vòng
+    `json(replace(replace(string(...))))` bên ngoài là bắt buộc:
+    `addProperty` KHÔNG nhận tên property chứa dấu chấm — build bằng tên
+    tạm `prvFingerprint`/`prvRule` rồi đổi tên trên chuỗi đã serialize.)*
   - **`HTTP_PostThread`** — loại **Send an HTTP request to Azure DevOps** (quy ước ADO)
     - Method: `POST`
     - Relative URI (fx):
