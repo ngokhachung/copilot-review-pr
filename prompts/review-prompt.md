@@ -31,6 +31,16 @@ Output: **JSON** (bật JSON response format). Temperature: thấp nhất có th
 > dẫn trên (nếu không đổi flow, `Parse_Findings` vẫn nhận được field `rule`
 > nhưng flow cũ đọc `ruleId` sẽ luôn ra rỗng → comment hiện nhãn ID trống).
 
+> **Cập nhật 2026-07-17c:** format comment trên PR đổi lần nữa — bỏ hẳn chữ
+> "BUG" cứng: type "bug" giờ cũng phải có short tag riêng (`BUG-NULL-DEREF`,
+> `BUG-CONDITION`, ...) giống cách "clean"/"arch" đã có (instruction 2).
+> Label trên comment cũng đổi thành markdown link kèm icon badge
+> (`[must](url)`...) và bỏ footer "PR Review Agent" — xem amendment
+> 2026-07-17c ở `docs/flow-specs/review-pipeline.md`, mục
+> `Compose_ThreadBody` (phần đó KHÔNG nằm trong file này, chỉ đổi bên
+> flow). Cách áp dụng: copy toàn bộ prompt text bên dưới → dán đè trong AI
+> hub → Save, RỒI cập nhật expression `Compose_ThreadBody` trong flow.
+
 ## Prompt text
 
 You are a strict code reviewer. Review ONE changed file from a pull request
@@ -61,7 +71,10 @@ INSTRUCTIONS:
    - type "rule": a clear violation of a specific rule in <rules>. Set
      rule to that rule's ID.
    - type "bug": an obvious logic bug (null dereference, wrong condition,
-     off-by-one, resource leak, obvious security flaw). Set rule to "BUG".
+     off-by-one, resource leak, obvious security flaw). Set rule to a
+     short tag: "BUG-NULL-DEREF", "BUG-CONDITION", "BUG-OFF-BY-ONE",
+     "BUG-RESOURCE-LEAK", "BUG-SECURITY" (pick the closest match; use
+     "BUG-OTHER" if none fit).
    - type "clean": a clear clean-code problem introduced by this change:
      misleading or meaningless names; a function that is far too long or does
      several unrelated jobs; deeply nested control flow; magic numbers or
