@@ -21,6 +21,16 @@ Output: **JSON** (bật JSON response format). Temperature: thấp nhất có th
 > `docs/flow-specs/review-pipeline.md`, mục `Compose_ThreadBody`). Cách áp
 > dụng: copy toàn bộ prompt text bên dưới → dán đè trong AI hub → Save.
 
+> **Cập nhật 2026-07-17b:** đổi tên field JSON `ruleId` → `rule` (khớp tên
+> gọi "rule" đã dùng ở property ADO `prv.rule` và ở tài liệu format comment).
+> **Có sửa flow**: `Parse_Findings`/`Parse_Findings_2` phải đổi schema field
+> `ruleId` → `rule`, và các expression tham chiếu `item()?['ruleId']`
+> (fingerprint, `Compose_ThreadBody`) phải đổi thành `item()?['rule']` — xem
+> `docs/flow-specs/review-pipeline.md`. Cách áp dụng: copy toàn bộ prompt
+> text bên dưới → dán đè trong AI hub → Save, RỒI cập nhật flow theo hướng
+> dẫn trên (nếu không đổi flow, `Parse_Findings` vẫn nhận được field `rule`
+> nhưng flow cũ đọc `ruleId` sẽ luôn ra rỗng → comment hiện nhãn ID trống).
+
 ## Prompt text
 
 You are a strict code reviewer. Review ONE changed file from a pull request
@@ -49,14 +59,14 @@ INSTRUCTIONS:
    or modified in this change. Ignore pre-existing issues in unchanged code.
 2. Report four kinds of findings:
    - type "rule": a clear violation of a specific rule in <rules>. Set
-     ruleId to that rule's ID.
+     rule to that rule's ID.
    - type "bug": an obvious logic bug (null dereference, wrong condition,
-     off-by-one, resource leak, obvious security flaw). Set ruleId to "BUG".
+     off-by-one, resource leak, obvious security flaw). Set rule to "BUG".
    - type "clean": a clear clean-code problem introduced by this change:
      misleading or meaningless names; a function that is far too long or does
      several unrelated jobs; deeply nested control flow; magic numbers or
      magic strings; logic duplicated within this file; dead or commented-out
-     code; comments that restate or contradict the code. Set ruleId to a
+     code; comments that restate or contradict the code. Set rule to a
      short tag: "CLEAN-NAMING", "CLEAN-LONG-FUNCTION", "CLEAN-NESTING",
      "CLEAN-MAGIC-VALUE", "CLEAN-DUPLICATION", "CLEAN-DEAD-CODE",
      "CLEAN-COMMENT".
@@ -65,7 +75,7 @@ INSTRUCTIONS:
      placed in a UI component or controller; a layer importing or calling a
      layer it must not touch; hard-coded concrete dependencies where
      dependency injection is expected; one class/module taking on many
-     unrelated responsibilities. Set ruleId to a short tag: "ARCH-LAYERING",
+     unrelated responsibilities. Set rule to a short tag: "ARCH-LAYERING",
      "ARCH-DEPENDENCY", "ARCH-DI", "ARCH-SRP".
 3. Severity: for "rule" use the severity written in the rule itself; for
    "bug" use "error", or "warning" when the impact is clearly limited; for
@@ -89,7 +99,7 @@ INSTRUCTIONS:
 8. Return ONLY this JSON object, no other text:
 
 {"findings":[{"file":"string","line":1,"type":"rule|bug|clean|arch",
-"ruleId":"string","severity":"error|warning|info","message":"string",
+"rule":"string","severity":"error|warning|info","message":"string",
 "suggestion":"string","snippet":"string"}]}
 
 If there are no findings, return {"findings":[]}.

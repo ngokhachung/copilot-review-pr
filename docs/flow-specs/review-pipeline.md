@@ -220,6 +220,10 @@ Quy ước dùng lại nhiều lần:
 **22a. `Parse_Findings`** — loại **Parse JSON** (Data Operation)
 - Content: chọn token **Text** của `Prompt_Review` từ Dynamic content
   (nếu gõ fx: `outputs('Prompt_Review')?['body']?['responsev2']?['predictionOutput']?['text']`)
+- **Amendment 2026-07-17b:** field `ruleId` đổi tên thành `rule` (khớp tên
+  `prv.rule`/`ID rule` dùng ở các chỗ khác) — schema dưới đây và mọi
+  `item()?['ruleId']` trong flow (action 23 fingerprint, `Compose_ThreadBody`)
+  đã đổi theo. Áp dụng cho cả `Parse_Findings_2` (schema y hệt, xem 22c).
 - Schema (dán nguyên vào ô Schema):
   ```json
   {
@@ -233,7 +237,7 @@ Quy ước dùng lại nhiều lần:
             "file": { "type": "string" },
             "line": { "type": "integer" },
             "type": { "type": "string" },
-            "ruleId": { "type": "string" },
+            "rule": { "type": "string" },
             "severity": { "type": "string" },
             "message": { "type": "string" },
             "suggestion": { "type": "string" },
@@ -263,7 +267,7 @@ Quy ước dùng lại nhiều lần:
 - Select an output (fx): `coalesce(body('Parse_Findings')?['findings'], body('Parse_Findings_2')?['findings'], json('[]'))`
 - Bên trong: 1 action **Append to array variable** — Name: `varFindings` · Value (fx):
   ```
-  addProperty(item(), 'fingerprint', toLower(concat(if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file'])), '|', if(equals(item()?['type'],'rule'), item()?['ruleId'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))
+  addProperty(item(), 'fingerprint', toLower(concat(if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file'])), '|', if(equals(item()?['type'],'rule'), item()?['rule'], 'bug'), '|', take(replace(replace(replace(item()?['snippet'],' ',''), decodeUriComponent('%09'),''), decodeUriComponent('%0D'),''), 120))))
   ```
 
 *(hết vòng lặp Apply_to_each_File — action 24 trở đi đặt SAU nó, vẫn trong Scope_Try)*
@@ -327,7 +331,7 @@ Quy ước dùng lại nhiều lần:
     để dành cho người review comment tay.
     Inputs (fx, dán nguyên MỘT dòng):
     ```
-    json(replace(replace(string(addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat('[', if(equals(item()?['type'],'bug'),'must',if(equals(item()?['type'],'rule'),if(equals(item()?['severity'],'error'),'must',if(equals(item()?['severity'],'warning'),'suggestion','nits')),if(equals(item()?['type'],'arch'),'imo','nits'))), ']', decodeUriComponent('%0A'), coalesce(item()?['ruleId'],'BUG'), decodeUriComponent('%0A'), item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'Gợi ý solution:', decodeUriComponent('%0A'), item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prvFingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prvRule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['ruleId'], ''))))), '"prvFingerprint"', '"prv.fingerprint"'), '"prvRule"', '"prv.rule"'))
+    json(replace(replace(string(addProperty(addProperty(addProperty(addProperty(json('{}'), 'comments', createArray(addProperty(addProperty(addProperty(json('{}'), 'parentCommentId', 0), 'commentType', 1), 'content', concat('[', if(equals(item()?['type'],'bug'),'must',if(equals(item()?['type'],'rule'),if(equals(item()?['severity'],'error'),'must',if(equals(item()?['severity'],'warning'),'suggestion','nits')),if(equals(item()?['type'],'arch'),'imo','nits'))), ']', decodeUriComponent('%0A'), coalesce(item()?['rule'],'BUG'), decodeUriComponent('%0A'), item()?['message'], if(empty(item()?['suggestion']),'',concat(decodeUriComponent('%0A%0A'),'Gợi ý solution:', decodeUriComponent('%0A'), item()?['suggestion'])), decodeUriComponent('%0A%0A'), '<sub>PR Review Agent · ', item()?['type'], '</sub>')))), 'status', 1), 'threadContext', addProperty(addProperty(addProperty(json('{}'), 'filePath', if(startswith(item()?['file'],'/'), item()?['file'], concat('/', item()?['file']))), 'rightFileStart', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1)), 'rightFileEnd', addProperty(addProperty(json('{}'), 'line', max(int(coalesce(item()?['line'], 1)), 1)), 'offset', 1))), 'properties', addProperty(addProperty(json('{}'), 'prvFingerprint', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', item()?['fingerprint'])), 'prvRule', addProperty(addProperty(json('{}'), '$type', 'System.String'), '$value', coalesce(item()?['rule'], ''))))), '"prvFingerprint"', '"prv.fingerprint"'), '"prvRule"', '"prv.rule"'))
     ```
     *(Body dựng ra đúng cấu trúc: `comments[0].content` = nội dung comment
     4 dòng như trên; `threadContext` neo file/dòng — line ép về số nguyên
